@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
       const style = document.createElement('style')
       style.setAttribute('data-dsh-remote-desktop-companion', '')
       style.textContent = `
-        body[data-dsh-remote-desktop-child="true"] [class*="sidebarCol"] { display: none !important; }
+        body[data-dsh-remote-desktop-child="true"] [class*="sidebarCol"] { visibility: hidden !important; pointer-events: none !important; overflow: hidden !important; }
         body[data-dsh-remote-desktop-child="true"] [class*="handle"][data-side="sidebar"] { display: none !important; }
         body[data-dsh-remote-desktop-child="true"] [class*="frame"]:has(> [class*="sidebarCol"]) { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
       `
@@ -32,13 +32,42 @@ window.__ModuleLoader__.load({
         const ready = () => {
           window.parent?.postMessage({ type: 'dsh-remote-desktop/ready', sourceToken: token }, parent)
         }
+        const waitUntilCurrent = (sessionId) => new Promise((resolve, reject) => {
+          const deadline = Date.now() + 5000
+          let disposed = false
+          const cleanup = ctx.sessions.list?.subscribe?.(() => { check() })
+          const check = () => {
+            if (disposed) return
+            if (ctx.sessions.list?.getSnapshot?.().current === sessionId) {
+              disposed = true
+              cleanup?.()
+              resolve()
+              return
+            }
+            if (Date.now() >= deadline) {
+              disposed = true
+              cleanup?.()
+              reject(new Error(`session ${sessionId} did not become current`))
+            }
+          }
+          const retry = () => {
+            if (disposed) return
+            ctx.sessions.open(sessionId)
+            check()
+            if (!disposed) window.setTimeout(retry, 250)
+          }
+          retry()
+        })
         const onMessage = (event) => {
           if (event.origin !== parent) return
           const data = event.data
           if (data?.type !== 'dsh-remote-desktop/open-session' || data.token !== token) return
           if (typeof data.sessionId !== 'string' || data.sessionId === '') return
-          ctx.sessions.open(data.sessionId)
-          window.parent?.postMessage({ type: 'dsh-remote-desktop/opened', sourceToken: token, sessionId: data.sessionId }, parent)
+          void waitUntilCurrent(data.sessionId).then(() => {
+            window.parent?.postMessage({ type: 'dsh-remote-desktop/opened', sourceToken: token, sessionId: data.sessionId }, parent)
+          }).catch((error) => {
+            window.parent?.postMessage({ type: 'dsh-remote-desktop/open-failed', sourceToken: token, sessionId: data.sessionId, error: error instanceof Error ? error.message : String(error) }, parent)
+          })
         }
         window.addEventListener('message', onMessage)
         ready()

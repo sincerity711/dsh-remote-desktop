@@ -316,6 +316,63 @@ async function runBrowserChecks() {
       if (count < 1) throw new Error('Better Sidebar host missing')
       return 'data-dsh-better-sidebar present'
     })
+    await item('P0-PLUGIN-005', 'Better Sidebar bottom panel toggles in iframe', async () => {
+      const frame = await mustRemoteFrame(page)
+      await dismissFrameBlockingUi(frame)
+      const result = await frame.evaluate(async () => {
+        const visible = (element) => {
+          if (!(element instanceof HTMLElement)) return false
+          let cursor = element
+          while (cursor instanceof HTMLElement) {
+            const style = getComputedStyle(cursor)
+            if (style.visibility === 'hidden' || style.display === 'none' || style.pointerEvents === 'none') return false
+            cursor = cursor.parentElement
+          }
+          const rect = element.getBoundingClientRect()
+          if (rect.width <= 10 || rect.height <= 10) return false
+          const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+          return hit === element || element.contains(hit)
+        }
+        const findButton = (needles) => [...document.querySelectorAll('button')]
+          .find(button => !button.disabled && needles.some(needle => `${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''} ${button.textContent || ''}`.includes(needle)))
+        const waitForButton = async (needles) => {
+          const deadline = Date.now() + 5000
+          while (Date.now() < deadline) {
+            const button = findButton(needles)
+            if (button) return button
+            await new Promise(resolve => setTimeout(resolve, 250))
+          }
+          return undefined
+        }
+        const bottomPanel = () => [...document.querySelectorAll('[class*="bottomPanel"]')].find(visible)
+        const bottomClose = () => [...document.querySelectorAll('[class*="bottomClose"]')].find(visible)
+        const collapseBottom = async () => {
+          const close = findButton(['Collapse bottom panel', '折叠底部面板']) || bottomClose()
+          if (!close) return false
+          close.click()
+          await new Promise(resolve => setTimeout(resolve, 700))
+          return true
+        }
+        if (bottomPanel()) {
+          if (!await collapseBottom()) return { ok: false, reason: 'bottom panel was open but no collapse control worked' }
+        }
+        if (bottomPanel()) return { ok: false, reason: 'bottom panel stayed visible before reopen' }
+        if (bottomClose()) return { ok: false, reason: 'bottom close control visible before opening bottom panel' }
+        const open = await waitForButton(['Expand bottom panel', '展开底部面板'])
+        if (!open) return { ok: false, reason: 'bottom panel expand button missing or disabled after waiting for remote session scope' }
+        open.click()
+        await new Promise(resolve => setTimeout(resolve, 700))
+        const panel = bottomPanel()
+        if (!panel) return { ok: false, reason: 'bottom panel did not become visible after expand click' }
+        if (panel.getBoundingClientRect().width < 200) return { ok: false, reason: `bottom panel width too small: ${panel.getBoundingClientRect().width}` }
+        if (!await collapseBottom()) return { ok: false, reason: 'bottom panel collapse button missing after open' }
+        if (bottomPanel()) return { ok: false, reason: 'bottom panel stayed visible after collapse click' }
+        if (bottomClose()) return { ok: false, reason: 'bottom close control stayed visible after collapse' }
+        return { ok: true, reason: 'bottom panel opened and closed inside remote iframe' }
+      })
+      if (!result.ok) throw new Error(result.reason)
+      return result.reason
+    })
     await item('P0-SIDEBAR-003', 'active source indication remote', async () => {
       const body = await page.locator('body').innerText()
       if (!body.includes('Remote: win-wsl') || !body.includes('connected')) throw new Error('remote status missing')
@@ -563,6 +620,22 @@ async function dismissTopLevelBlockingUi(page) {
   }
   await page.keyboard.press('Escape').catch(() => {})
   await page.waitForTimeout(300)
+}
+
+
+async function dismissFrameBlockingUi(frame) {
+  for (let i = 0; i < 3; i += 1) {
+    const clicked = await frame.evaluate(() => {
+      const labels = ['Configure later', '稍后配置', 'Continue', 'Got it', 'OK']
+      const buttons = [...document.querySelectorAll('button')]
+      const button = buttons.find(item => labels.some(label => (item.textContent || '').includes(label)))
+      if (button === undefined) return false
+      button.click()
+      return true
+    }).catch(() => false)
+    if (!clicked) break
+    await new Promise(resolve => setTimeout(resolve, 700))
+  }
 }
 
 async function expectText(page, text) {

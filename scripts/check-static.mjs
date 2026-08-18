@@ -36,7 +36,7 @@ const requiredCompanionNeedles = [
   'event.origin !== parent',
   'data.token !== token',
   'dsh-remote-desktop/open-session',
-  '[class*="sidebarCol"] { display: none !important; }',
+  '[class*="sidebarCol"] { visibility: hidden !important; pointer-events: none !important; overflow: hidden !important; }',
   ':has(> [class*="sidebarCol"])',
 ]
 for (const needle of requiredCompanionNeedles) {

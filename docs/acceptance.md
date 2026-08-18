@@ -211,7 +211,7 @@ A failing run must exit non-zero and include the failing item id in stdout.
   PASS: the active remote overlay is portalled directly under `document.body`, uses fixed positioning and a top z-index, and covers a right-side viewport probe so local body-level side panels cannot remain above it.
 
 - **P0-IFRAME-006 companion CSS targets only dsh app frame**
-  PASS: companion CSS rewrites only the DSH app frame that directly contains `sidebarCol`; it must not rewrite every class containing `frame`, because that breaks remote plugins such as Better Sidebar right/bottom panels.
+  PASS: companion CSS keeps the hidden `sidebarCol` mounted as a zero-width grid item and rewrites only the DSH app frame that directly contains `sidebarCol`; it must not rewrite every class containing `frame`, because that breaks remote plugins such as Better Sidebar right/bottom panels.
 
 - **P0-IFRAME-002 companion marker**
   PASS: the iframe body has `data-dsh-remote-desktop-child="true"`.
@@ -235,6 +235,9 @@ A failing run must exit non-zero and include the failing item id in stdout.
 
 - **P0-PLUGIN-004 local explorer not polluted**
   PASS: after switching back to Local, the top-level local UI does not show `remote-only.txt` or `REMOTE_SENTINEL_WIN_WSL` as local content.
+
+- **P0-PLUGIN-005 Better Sidebar bottom panel toggles in iframe**
+  PASS: inside the remote iframe, Better Sidebar bottom panel expands and collapses from its own controls, and its close control is not visible while the bottom panel is closed.
 
 ### ARTIFACTS: evidence
 
