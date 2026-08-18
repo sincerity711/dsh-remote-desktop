@@ -11,21 +11,21 @@ P0 is the hard gate for the first release. It uses one remote destination, `win-
 1. Prepare isolated local and remote dsh homes.
 2. Connect the local dsh page to the remote dsh instance through SSH.
 3. Show Local and `Remote: win-wsl` in the unified left sidebar.
-4. Switch from local to a remote session.
+4. Switch from local to a remote session by clicking a remote session row, not the remote source header.
 5. Prove the remote iframe is visible, isolated, controlled by the companion, and rendering the remote dsh main area.
 6. Prove `dsh-better-sidebar` inside the remote iframe reads and executes on the remote machine.
-7. Switch back from remote to local and prove the remote iframe no longer owns the interaction path.
+7. Switch back from remote to local by clicking a local session row and prove the remote iframe no longer owns the interaction path.
 8. Save screenshots, logs, and a structured report.
 
-P0 must be automated by `scripts/acceptance/e2e-win-wsl.mjs` and exposed as `pnpm acceptance:p0`.
+P0 must be automated by `scripts/acceptance/e2e-win-wsl.mjs` and exposed as `npm run acceptance:p0`.
 
 ### P1: required before release and after large interaction changes
 
-P1 covers multi-remote isolation, reconnect behavior, and Settings CRUD. It is automated by `scripts/acceptance/p1-p2-win-wsl.mjs` and exposed as `pnpm acceptance:p1`.
+P1 covers multi-remote isolation, reconnect behavior, and Settings CRUD. It is automated by `scripts/acceptance/p1-p2-win-wsl.mjs` and exposed as `npm run acceptance:p1`.
 
 ### P2: long-term product quality
 
-P2 covers performance, broader plugin compatibility, security hardening, and layout polish. The first automated P2 subset runs as part of `pnpm acceptance:p1`. The complete gate for this repository is `pnpm acceptance:all`, which runs `check`, P0, and the automated P1/P2 subset.
+P2 covers performance, broader plugin compatibility, security hardening, and layout polish. The first automated P2 subset runs as part of `npm run acceptance:p1`. The complete gate for this repository is `npm run acceptance:all`, which runs `check`, P0, and the automated P1/P2 subset.
 
 ## Environment rules
 
@@ -54,17 +54,28 @@ rm -rf .acceptance/local-home .acceptance/artifacts
 ssh win-wsl 'rm -rf ~/.dsh-remote-desktop-test /tmp/dsh-remote-desktop-sentinel'
 ```
 
+
+## Static check items
+
+`npm run check` must validate all runtime entry points and acceptance scripts with `node --check`, then run `scripts/check-static.mjs`. The static script verifies that:
+
+- `packages/local/lib/client.js` provides the light `ctx.remoteDesktop` service with `openLocalSession` and `openRemoteSession`.
+- the source-aware sidebar uses DSH design tokens and the official-style fork marker.
+- legacy inline MVP row/source-header styles are absent from the sidebar implementation.
+- the companion still validates parent origin and token before `open-session`.
+- the companion still strongly hides the remote iframe's left sidebar.
+
 ## P0 script
 
 Command:
 
 ```sh
-pnpm acceptance:p0
+npm run acceptance:p0
 # equivalent explicit form
 node scripts/acceptance/e2e-win-wsl.mjs --ssh-dest win-wsl
 
 # full repository gate
-pnpm acceptance:all
+npm run acceptance:all
 ```
 
 The script must run non-interactively. It may fail early when key-only SSH is unavailable, but the failure must identify the missing prerequisite.
@@ -93,21 +104,22 @@ The script must drive a real browser through Playwright or an equivalent browser
 2. Assert the unified left sidebar shows both `Local` and `Remote: win-wsl`.
 3. Assert the remote source shows as connected.
 4. Assert a remote session row is visible under `Remote: win-wsl`.
-5. Click the remote session.
-6. Assert the remote iframe is visible.
-7. Assert the iframe origin differs from the local dsh origin.
-8. Assert the companion returns a `dsh-remote-desktop/opened` message for the clicked session id.
-9. Assert iframe `body[data-dsh-remote-desktop-child="true"]` exists.
-10. Assert the remote iframe's own left sidebar is hidden while the top-level local sidebar remains visible.
-11. Assert a remote chat/composer or onboarding main area is visible in the iframe.
-12. Assert `dsh-better-sidebar` is mounted inside the iframe.
-13. Assert the remote Better Sidebar file path can see `remote-only.txt`.
-14. Assert the remote Better Sidebar terminal can run `cat /tmp/dsh-remote-desktop-sentinel/remote-only.txt` and returns `REMOTE_SENTINEL_WIN_WSL`.
-15. Click `Local` in the top-level sidebar.
-16. Assert the remote iframe is hidden or non-interactive.
-17. Assert the local main area is visible again.
-18. Assert the local UI does not show `REMOTE_SENTINEL_WIN_WSL` or `remote-only.txt` as local content.
-19. Repeat local → remote → local → remote once more to catch stuck overlay or stale active-source state.
+5. Click the remote source header and assert it does not activate the remote iframe.
+6. Click the remote session row.
+7. Assert the remote iframe is visible.
+8. Assert the iframe origin differs from the local dsh origin.
+9. Assert the companion returns a `dsh-remote-desktop/opened` message for the clicked session id.
+10. Assert iframe `body[data-dsh-remote-desktop-child="true"]` exists.
+11. Assert the remote iframe's own left sidebar is hidden while the top-level local sidebar remains visible.
+12. Assert a remote chat/composer or onboarding main area is visible in the iframe.
+13. Assert `dsh-better-sidebar` is mounted inside the iframe.
+14. Assert the remote Better Sidebar file path can see `remote-only.txt`.
+15. Assert the remote Better Sidebar terminal can run `cat /tmp/dsh-remote-desktop-sentinel/remote-only.txt` and returns `REMOTE_SENTINEL_WIN_WSL`.
+16. Click a local session row in the top-level sidebar.
+17. Assert the remote iframe is hidden or non-interactive.
+18. Assert the local main area is visible again.
+19. Assert the local UI does not show `REMOTE_SENTINEL_WIN_WSL` or `remote-only.txt` as local content.
+20. Repeat local → remote → local → remote once more to catch stuck overlay or stale active-source state.
 
 ### P0 artifacts
 
@@ -170,7 +182,10 @@ A failing run must exit non-zero and include the failing item id in stdout.
   PASS: the remote sentinel workspace/session is visible under `Remote: win-wsl`.
 
 - **P0-SIDEBAR-003 active source indication**
-  PASS: after clicking a remote session, `win-wsl` has an active/selected indication; after clicking Local, Local has an active/selected indication.
+  PASS: after clicking a remote session row, `win-wsl` has an active/selected indication; after clicking a local session row, Local has an active/selected indication.
+
+- **P0-SIDEBAR-004 source header does not switch active target**
+  PASS: clicking a remote source header toggles grouping/status only and does not show or activate the remote iframe.
 
 ### SWITCH: source switching
 
@@ -181,7 +196,7 @@ A failing run must exit non-zero and include the failing item id in stdout.
   PASS: the companion emits `dsh-remote-desktop/opened` with the clicked remote session id.
 
 - **P0-SWITCH-003 remote to local**
-  PASS: clicking Local hides or disables interaction with the remote iframe, and the local main area is visible again.
+  PASS: clicking a local session row hides or disables interaction with the remote iframe, and the local main area is visible again.
 
 - **P0-SWITCH-004 repeated switching**
   PASS: local → remote → local → remote completes twice without stuck overlays, duplicate iframes on top, or inability to return to Local.
@@ -247,7 +262,7 @@ A failing run must exit non-zero and include the failing item id in stdout.
 ### RECOVERY: disconnect and reconnect
 
 - **P1-RECOVERY-001 disconnect active remote**
-  PASS: disconnecting the active remote shows a clear disconnected overlay.
+  PASS: disconnecting the active remote selected through a remote session row shows a clear disconnected state.
 
 - **P1-RECOVERY-002 reconnect preserves source**
   PASS: reconnecting allows the same remote session to open again.

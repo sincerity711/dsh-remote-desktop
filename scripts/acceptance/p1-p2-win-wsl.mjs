@@ -26,6 +26,7 @@ const started = []
 let localBase = ''
 let localLog = ''
 let browserLogs = []
+let localSessionId = ''
 
 await mkdir(artifactDir, { recursive: true })
 process.on('exit', stopStarted)
@@ -101,7 +102,7 @@ async function browserMultiChecks() {
     await page.waitForTimeout(8000)
     await dismissTopLevelBlockingUi(page)
     await item('P1-MULTI-003', 'tokens do not cross', async () => {
-      for (const remote of remotes) await page.getByText(`Remote: ${remote.label}`).first().click()
+      for (const remote of remotes) await page.locator(`[data-rd-remote-session-id="${remote.sessionId}"]`).click()
       await page.waitForTimeout(3000)
       const result = await page.evaluate(async ({ wrongToken, targetSession, targetOrigin }) => {
         const frame = [...document.querySelectorAll('iframe')].find(f => f.src.startsWith(targetOrigin))
@@ -124,7 +125,7 @@ async function browserMultiChecks() {
       return result.reason
     })
     await item('P1-RECOVERY-001', 'disconnect active remote', async () => {
-      await page.getByText(`Remote: ${remotes[0].label}`).first().click()
+      await page.locator(`[data-rd-remote-session-id="${remotes[0].sessionId}"]`).click()
       await api('/disconnect', { method: 'POST', body: JSON.stringify({ id: remotes[0].id }) })
       await page.waitForTimeout(2000)
       const sources = (await api('/sources')).sources
@@ -157,7 +158,7 @@ async function recoveryAndSettingsChecks() {
 
 
 async function settingsUiChecks(page) {
-  await page.getByText('Local').first().click().catch(() => {})
+  if (localSessionId) await page.locator('[data-rd-local-session-id]').first().click().catch(() => {})
   await page.waitForTimeout(800)
   await clickButtonContaining(page, 'Settings')
   await page.waitForTimeout(1000)
@@ -317,6 +318,9 @@ async function setupLocal() {
   child.stderr.on('data', b => { localLog += String(b) })
   localBase = `http://127.0.0.1:${port}`
   await waitHttp(`${localBase}/remote-desktop/api/sources`, 60000)
+  const workspace = await localRpc('workspace.create', { path: repoRoot })
+  const session = await localRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
+  localSessionId = session.sessionId
 }
 
 async function patchProfilePackage(profile) {

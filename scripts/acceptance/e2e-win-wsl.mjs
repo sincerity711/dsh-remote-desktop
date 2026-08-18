@@ -215,16 +215,23 @@ async function runBrowserChecks() {
       if (!body.includes('Local') || !body.includes('active')) throw new Error('Local active indication missing')
       return 'Local active indication visible'
     })
+    await item('P0-SIDEBAR-004', 'source header does not switch active target', async () => {
+      const header = page.locator('.rd-sourceHeader[data-rd-source-id="win-wsl"]').first()
+      await header.click()
+      await page.waitForTimeout(500)
+      const overlayActive = await page.locator('[data-rd-overlay-active="true"]').count()
+      const visible = await page.locator('iframe').first().evaluate(frame => getComputedStyle(frame).display !== 'none').catch(() => false)
+      await header.click()
+      if (overlayActive > 0 || visible) throw new Error('remote source header activated iframe')
+      return 'remote source header only toggled grouping'
+    })
     await item('P0-SWITCH-001', 'local to remote', async () => {
-      await clickText(page, /tmp|remote-only|\(blank\)|win-wsl/)
-      await page.getByText('Remote: win-wsl').first().click().catch(() => {})
-      const row = page.getByText(/tmp|remote-only|\(blank\)/).first()
-      if (await row.count()) await row.click()
+      await page.locator(`[data-rd-remote-session-id="${remoteSessionId}"]`).click()
       await page.waitForTimeout(6000)
       const frame = await remoteFrame(page)
       if (frame === undefined) throw new Error('remote iframe missing')
       await page.screenshot({ path: join(artifactDir, '02-remote-active.png'), fullPage: true })
-      return `remote iframe ${frame.url()} visible`
+      return `remote session row opened iframe ${frame.url()}`
     })
     await item('P0-IFRAME-001', 'remote origin', async () => {
       const frame = await remoteFrame(page)
@@ -285,7 +292,7 @@ async function runBrowserChecks() {
       return 'Remote: win-wsl connected visible'
     }, { duplicateOk: true })
     await item('P0-SWITCH-003', 'remote to local', async () => {
-      await page.getByText('Local').first().click()
+      await page.locator('[data-rd-local-session-id]').first().click()
       await page.waitForTimeout(1000)
       const visible = await page.locator('iframe').first().evaluate(frame => getComputedStyle(frame).display !== 'none').catch(() => false)
       if (visible) throw new Error('remote iframe still visible after Local click')
@@ -299,11 +306,11 @@ async function runBrowserChecks() {
     })
     await item('P0-SWITCH-004', 'repeated switching', async () => {
       for (let i = 0; i < 2; i += 1) {
-        await page.getByText('Remote: win-wsl').first().click()
+        await page.locator(`[data-rd-remote-session-id="${remoteSessionId}"]`).click()
         await page.waitForTimeout(600)
         let visible = await page.locator('iframe').first().evaluate(frame => getComputedStyle(frame).display !== 'none')
         if (!visible) throw new Error(`iframe hidden on remote iteration ${i}`)
-        await page.getByText('Local').first().click()
+        await page.locator('[data-rd-local-session-id]').first().click()
         await page.waitForTimeout(600)
         visible = await page.locator('iframe').first().evaluate(frame => getComputedStyle(frame).display !== 'none')
         if (visible) throw new Error(`iframe still visible on local iteration ${i}`)
