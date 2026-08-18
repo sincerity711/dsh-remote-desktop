@@ -103,13 +103,13 @@ window.__ModuleLoader__.load({
           props.wide && h('button', { style: styles.smallButton, onClick: () => void store.refreshSources() }, 'Refresh')
         ),
         remote.error && h('div', { style: styles.error }, remote.error),
-        h(SourceHeader, { label: 'Local', state: remote.active.kind === 'local' ? 'active' : 'ready', onClick: () => store.openLocal() }),
+        h(SourceHeader, { label: 'Local', sourceId: 'local', active: remote.active.kind === 'local', state: remote.active.kind === 'local' ? 'active' : 'ready', onClick: () => store.openLocal() }),
         props.wide && localWorkspaces.map(ws => h('div', { key: ws.workspaceId, style: styles.group },
           h('div', { style: styles.groupTitle }, ws.title || ws.path),
           (ws.sessionIds || []).map(id => {
             const row = localById[id]
             if (!row || row.blank || row.origin === 'subagent') return null
-            return h('button', { key: id, style: styles.row, onClick: () => props.openLocal(id) }, row.displayTitle || row.title || id)
+            return h('button', { key: id, style: styles.row, 'data-rd-local-session-id': id, onClick: () => props.openLocal(id) }, row.displayTitle || row.title || id)
           })
         )),
         remote.sources.map(source => h(RemoteSource, { key: source.id, source, snapshot: remote.snapshots[source.id], wide: props.wide })),
@@ -117,8 +117,8 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function SourceHeader({ label, state, onClick }) {
-      return h('button', { type: 'button', style: styles.sourceHeader, onClick },
+    function SourceHeader({ label, state, sourceId, active, onClick }) {
+      return h('button', { type: 'button', style: { ...styles.sourceHeader, ...(active ? styles.activeSource : {}) }, 'data-rd-source-id': sourceId, 'data-rd-active': active ? 'true' : 'false', onClick },
         h('span', { style: { ...styles.dot, background: state === 'connected' || state === 'ready' || state === 'active' ? '#3bb273' : state === 'error' ? '#d9534f' : '#999' } }),
         h('span', null, label),
         h('span', { style: styles.state }, state)
@@ -128,7 +128,7 @@ window.__ModuleLoader__.load({
     function RemoteSource({ source, snapshot, wide }) {
       const groups = byWorkspace(snapshot)
       return h('div', null,
-        h(SourceHeader, { label: `Remote: ${source.label}`, state: source.state, onClick: () => { if (source.state === 'connected') store.set({ active: { kind: 'remote', id: source.id } }) } }),
+        h(SourceHeader, { label: `Remote: ${source.label}`, sourceId: source.id, active: store.getSnapshot().active.kind === 'remote' && store.getSnapshot().active.id === source.id, state: source.state, onClick: () => { if (source.state === 'connected') store.set({ active: { kind: 'remote', id: source.id } }) } }),
         wide && source.error && h('div', { style: styles.error }, source.error),
         wide && source.state !== 'connected' && h('div', { style: styles.hint }, 'Disconnected'),
         wide && snapshot?.state === 'error' && h('div', { style: styles.error }, snapshot.error),
@@ -137,6 +137,8 @@ window.__ModuleLoader__.load({
           ws.sessions.map(row => h('button', {
             key: row.sessionId,
             style: styles.row,
+            'data-rd-remote-session-id': row.sessionId,
+            'data-rd-source-id': source.id,
             onClick: () => store.openRemote(source.id, row.sessionId),
           }, `${titleOfSession(row)}${row.blank ? ' (blank)' : ''}`))
         ))
@@ -183,12 +185,13 @@ window.__ModuleLoader__.load({
         return () => clearTimeout(retry)
       }, [source?.id, source?.iframeUrl, source?.token, pendingOpen?.nonce])
 
-      return h('div', { style: { ...styles.overlay, left, display: source ? 'block' : 'none' } },
+      return h('div', { style: { ...styles.overlay, left, display: source ? 'block' : 'none' }, 'data-rd-overlay-active': source ? 'true' : 'false' },
         sources.filter(s => s.state === 'connected' && s.iframeUrl).map(s => h('iframe', {
           key: s.id,
           ref: el => { if (el) frames.current.set(s.id, el); else frames.current.delete(s.id) },
           src: withParent(s.iframeUrl),
           style: { ...styles.iframe, display: source?.id === s.id ? 'block' : 'none' },
+          'data-rd-frame-source-id': s.id,
           title: `Remote dsh ${s.label}`,
         })),
         source && h('div', { style: styles.badge }, `Remote: ${source.label}`)
@@ -211,23 +214,23 @@ window.__ModuleLoader__.load({
       const save = async () => {
         try { await store.saveSource(draft); setMessage('Saved') } catch (e) { setMessage(e.message || String(e)) }
       }
-      return h('div', { style: styles.settings },
+      return h('div', { style: styles.settings, 'data-rd-settings-section': 'true' },
         h('h2', null, 'Remote Desktop'),
         h('p', null, 'Connect to an already-running remote dsh web profile through SSH key authentication.'),
         ['label', 'sshHost', 'sshUser', 'sshPort', 'remoteDshHost', 'remoteDshPort'].map(key => h('label', { key, style: styles.label },
           key,
-          h('input', { style: styles.input, value: draft[key], onChange: e => setDraft({ ...draft, [key]: e.target.value }) })
+          h('input', { style: styles.input, 'data-rd-settings-field': key, value: draft[key], onChange: e => setDraft({ ...draft, [key]: e.target.value }) })
         )),
-        h('button', { style: styles.button, onClick: save }, 'Save source'),
+        h('button', { style: styles.button, 'data-rd-settings-save': 'true', onClick: save }, 'Save source'),
         message && h('div', { style: styles.hint }, message),
         h('h3', null, 'Sources'),
-        sources.map(source => h('div', { key: source.id, style: styles.card },
+        sources.map(source => h('div', { key: source.id, style: styles.card, 'data-rd-settings-source-id': source.id },
           h('strong', null, source.label), ' ', h('span', null, source.state),
           source.error && h('div', { style: styles.error }, source.error),
           h('div', { style: styles.actions },
-            h('button', { onClick: () => void store.connect(source.id) }, 'Connect'),
-            h('button', { onClick: () => void store.disconnect(source.id) }, 'Disconnect'),
-            h('button', { onClick: () => void store.delete(source.id) }, 'Delete')
+            h('button', { 'data-rd-settings-connect': source.id, onClick: () => void store.connect(source.id) }, 'Connect'),
+            h('button', { 'data-rd-settings-disconnect': source.id, onClick: () => void store.disconnect(source.id) }, 'Disconnect'),
+            h('button', { 'data-rd-settings-delete': source.id, onClick: () => void store.delete(source.id) }, 'Delete')
           )
         ))
       )
@@ -257,6 +260,7 @@ window.__ModuleLoader__.load({
       header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 8px' },
       smallButton: { fontSize: 12 },
       sourceHeader: { width: '100%', display: 'flex', gap: 8, alignItems: 'center', padding: '7px 8px', border: 0, borderRadius: 8, background: 'transparent', color: 'inherit', cursor: 'pointer', textAlign: 'left' },
+      activeSource: { background: 'rgba(57,100,254,.14)', fontWeight: 600 },
       dot: { width: 8, height: 8, borderRadius: 99, flex: '0 0 auto' },
       state: { marginLeft: 'auto', opacity: .55, fontSize: 11 },
       group: { margin: '4px 0 8px 14px' },
@@ -264,7 +268,7 @@ window.__ModuleLoader__.load({
       row: { display: 'block', width: '100%', border: 0, background: 'transparent', color: 'inherit', padding: '6px 8px', borderRadius: 8, textAlign: 'left', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
       hint: { opacity: .65, fontSize: 12, padding: '6px 8px' },
       error: { color: '#d9534f', fontSize: 12, padding: '6px 8px', whiteSpace: 'pre-wrap' },
-      overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 30, background: 'var(--dsw-alias-bg-base, #fff)', pointerEvents: 'auto' },
+      overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 2147482000, background: 'var(--dsw-alias-bg-base, #fff)', pointerEvents: 'auto' },
       iframe: { width: '100%', height: '100%', border: 0, background: 'white' },
       badge: { position: 'absolute', top: 8, right: 12, zIndex: 2, padding: '4px 8px', borderRadius: 999, background: 'rgba(0,0,0,.55)', color: 'white', fontSize: 12 },
       settings: { padding: 16, maxWidth: 720, font: '14px system-ui, sans-serif' },

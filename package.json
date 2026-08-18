@@ -2,9 +2,14 @@
   "name": "dsh-remote-desktop-repo",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "check": "node --check packages/local/lib/index.js && node --check packages/companion/lib/index.js"
+    "check": "node --check packages/local/lib/index.js && node --check packages/companion/lib/index.js",
+    "acceptance:p0": "node scripts/acceptance/e2e-win-wsl.mjs --ssh-dest win-wsl",
+    "acceptance:p1": "node scripts/acceptance/p1-p2-win-wsl.mjs --ssh-dest win-wsl",
+    "acceptance:all": "npm run check && npm run acceptance:p0 && npm run acceptance:p1"
   },
   "devDependencies": {}
 }

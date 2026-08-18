@@ -21,11 +21,11 @@ P0 must be automated by `scripts/acceptance/e2e-win-wsl.mjs` and exposed as `pnp
 
 ### P1: required before release and after large interaction changes
 
-P1 covers multi-remote isolation, reconnect behavior, and Settings CRUD. These checks may be separate scripts or an extended mode of the P0 script.
+P1 covers multi-remote isolation, reconnect behavior, and Settings CRUD. It is automated by `scripts/acceptance/p1-p2-win-wsl.mjs` and exposed as `pnpm acceptance:p1`.
 
 ### P2: long-term product quality
 
-P2 covers performance, broader plugin compatibility, security hardening, and layout polish. These checks do not block the first release unless the touched code changes that area.
+P2 covers performance, broader plugin compatibility, security hardening, and layout polish. The first automated P2 subset runs as part of `pnpm acceptance:p1`. The complete gate for this repository is `pnpm acceptance:all`, which runs `check`, P0, and the automated P1/P2 subset.
 
 ## Environment rules
 
@@ -62,6 +62,9 @@ Command:
 pnpm acceptance:p0
 # equivalent explicit form
 node scripts/acceptance/e2e-win-wsl.mjs --ssh-dest win-wsl
+
+# full repository gate
+pnpm acceptance:all
 ```
 
 The script must run non-interactively. It may fail early when key-only SSH is unavailable, but the failure must identify the missing prerequisite.
