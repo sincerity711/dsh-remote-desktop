@@ -1,0 +1,10 @@
+# Local profile example. Prefer installing with:
+#   dsh plugin --profile web add dsh-remote-desktop
+# For link development, add the package to profile package.json and include it
+# in dsh.profile.bundles.
+- id: ui-workspace
+  disabled: true
+
+- insert:
+    - id: remote-desktop
+      name: dsh-remote-desktop

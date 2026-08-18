@@ -1,0 +1,10 @@
+{
+  "name": "dsh-remote-desktop-repo",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "check": "node --check packages/local/lib/index.js && node --check packages/companion/lib/index.js"
+  },
+  "devDependencies": {}
+}
