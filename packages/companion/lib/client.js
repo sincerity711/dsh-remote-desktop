@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
       style.textContent = `
         body[data-dsh-remote-desktop-child="true"] [class*="sidebarCol"] { display: none !important; }
         body[data-dsh-remote-desktop-child="true"] [class*="handle"][data-side="sidebar"] { display: none !important; }
-        body[data-dsh-remote-desktop-child="true"] [class*="frame"] { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
+        body[data-dsh-remote-desktop-child="true"] [class*="frame"]:has(> [class*="sidebarCol"]) { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
       `
       document.head.appendChild(style)
       return () => { style.remove(); document.body.removeAttribute('data-dsh-remote-desktop-child') }

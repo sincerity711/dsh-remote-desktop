@@ -286,6 +286,17 @@ async function runBrowserChecks() {
       if (count < 1) throw new Error('companion marker missing')
       return 'body marker present'
     })
+    await item('P0-IFRAME-006', 'companion CSS targets only dsh app frame', async () => {
+      const frame = await mustRemoteFrame(page)
+      const result = await frame.evaluate(() => {
+        const css = document.querySelector('style[data-dsh-remote-desktop-companion]')?.textContent || ''
+        if (!css.includes(':has(> [class*="sidebarCol"])')) return { ok: false, reason: 'targeted app-frame selector missing' }
+        if (css.includes('[class*="frame"] { grid-template-columns')) return { ok: false, reason: 'broad frame selector still present' }
+        return { ok: true, reason: 'companion rewrites only the DSH app frame containing sidebarCol' }
+      })
+      if (!result.ok) throw new Error(result.reason)
+      return result.reason
+    })
     await item('P0-IFRAME-003', 'remote left sidebar hidden', async () => {
       const frame = await mustRemoteFrame(page)
       const visible = await frame.locator('[class*="sidebarCol"]').evaluateAll(nodes => nodes.some(n => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().width > 10))

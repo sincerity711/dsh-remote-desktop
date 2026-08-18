@@ -253,10 +253,11 @@ async function p2Checks() {
   })
   await item('P2-SECURITY-002', 'postMessage origin/token audit', async () => {
     const companion = await readFile(join(repoRoot, 'packages/companion/lib/client.js'), 'utf8')
-    for (const needle of ['event.origin !== parent', 'data.token !== token', 'dsh-remote-desktop/open-session']) {
+    for (const needle of ['event.origin !== parent', 'data.token !== token', 'dsh-remote-desktop/open-session', ':has(> [class*="sidebarCol"])']) {
       if (!companion.includes(needle)) throw new Error(`missing ${needle}`)
     }
-    return 'companion validates origin and token before open-session'
+    if (companion.includes('[class*="frame"] { grid-template-columns')) throw new Error('companion still has broad frame rewrite')
+    return 'companion validates origin/token and avoids broad frame rewrites'
   })
   await item('P2-COMPAT-001', 'plugin compatibility matrix baseline', async () => {
     for (const remote of remotes) {

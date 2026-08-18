@@ -63,7 +63,7 @@ ssh win-wsl 'rm -rf ~/.dsh-remote-desktop-test /tmp/dsh-remote-desktop-sentinel'
 - the source-aware sidebar uses DSH design tokens and the official-style fork marker.
 - legacy inline MVP row/source-header styles are absent from the sidebar implementation.
 - the companion still validates parent origin and token before `open-session`.
-- the companion still strongly hides the remote iframe's left sidebar.
+- the companion still strongly hides the remote iframe's left sidebar without broad `[class*="frame"]` CSS that breaks remote plugins.
 
 ## P0 script
 
@@ -209,6 +209,9 @@ A failing run must exit non-zero and include the failing item id in stdout.
 
 - **P0-IFRAME-005 remote overlay covers local body portals**
   PASS: the active remote overlay is portalled directly under `document.body`, uses fixed positioning and a top z-index, and covers a right-side viewport probe so local body-level side panels cannot remain above it.
+
+- **P0-IFRAME-006 companion CSS targets only dsh app frame**
+  PASS: companion CSS rewrites only the DSH app frame that directly contains `sidebarCol`; it must not rewrite every class containing `frame`, because that breaks remote plugins such as Better Sidebar right/bottom panels.
 
 - **P0-IFRAME-002 companion marker**
   PASS: the iframe body has `data-dsh-remote-desktop-child="true"`.

@@ -37,9 +37,13 @@ const requiredCompanionNeedles = [
   'data.token !== token',
   'dsh-remote-desktop/open-session',
   '[class*="sidebarCol"] { display: none !important; }',
+  ':has(> [class*="sidebarCol"])',
 ]
 for (const needle of requiredCompanionNeedles) {
   if (!companionClient.includes(needle)) throw new Error(`packages/companion/lib/client.js missing ${needle}`)
+}
+if (companionClient.includes('[class*="frame"] { grid-template-columns')) {
+  throw new Error('companion must not rewrite every class containing frame; it breaks remote plugins')
 }
 
 console.log('static remote desktop checks passed')
