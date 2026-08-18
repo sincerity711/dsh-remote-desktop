@@ -18,6 +18,14 @@ Install the companion on the remote profile:
 dsh plugin --profile web add dsh-remote-desktop-companion
 ```
 
-Other remote plugins, such as `dsh-better-sidebar`, stay installed on the remote profile. They run inside the remote iframe and keep using root-relative paths like `/api/*`, `/plugins/*`, and `/sidebar/*`.
+Configure the local machine with a concrete SSH alias:
 
-The local plugin connects with SSH key authentication and creates a local tunnel to `127.0.0.1:<remote-port>` on the remote machine. It does not start or stop the remote dsh process in the first release.
+```sshconfig
+Host win-wsl
+  HostName win-wsl
+  User your-user
+```
+
+The local plugin reads concrete `Host` entries from `~/.ssh/config`, connects with `ssh <alias>`, and creates a local tunnel to `127.0.0.1:<remote-port>` on the remote machine. It does not start or stop the remote dsh process in the first release.
+
+Other remote plugins, such as `dsh-better-sidebar`, stay installed on the remote profile. They run inside the remote iframe and keep using root-relative paths like `/api/*`, `/plugins/*`, and `/sidebar/*`.

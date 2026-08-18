@@ -14,6 +14,7 @@ const args = parseArgs(process.argv.slice(2))
 const sshDest = args['ssh-dest'] ?? 'win-wsl'
 const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'deepseek-harness'))
 const localHome = resolve(repoRoot, '.acceptance', 'p1-local-home')
+const localSshConfig = join(localHome, 'ssh-config')
 const artifactDir = join(repoRoot, '.acceptance', 'artifacts', `p1-${new Date().toISOString().replaceAll(/[:.]/g, '-')}`)
 const companionDir = resolve(repoRoot, 'packages/companion')
 const localPlugin = resolve(repoRoot, 'packages/local')
@@ -38,7 +39,7 @@ try {
     for (const remote of remotes) await setupRemote(remote)
     await setupLocal()
     for (const remote of remotes) {
-      await api('/sources', { method: 'POST', body: JSON.stringify({ id: remote.id, label: remote.label, sshHost: sshDest, sshUser: await remoteUser(), sshPort: 22, remoteDshHost: '127.0.0.1', remoteDshPort: remote.port }) })
+      await api('/sources', { method: 'POST', body: JSON.stringify({ id: remote.id, label: remote.label, sshAlias: sshDest, remoteDshHost: '127.0.0.1', remoteDshPort: remote.port }) })
       const source = (await api('/connect', { method: 'POST', body: JSON.stringify({ id: remote.id }) })).source
       remote.iframeUrl = source.iframeUrl
       remote.token = source.token
@@ -164,58 +165,36 @@ async function settingsUiChecks(page) {
   await page.waitForTimeout(1000)
   await clickButtonContaining(page, 'Remote Desktop').catch(() => {})
   await page.locator('[data-rd-settings-section="true"]').waitFor({ timeout: 10000 })
-  const setField = async (key, value) => {
-    const input = page.locator(`[data-rd-settings-field="${key}"]`).first()
-    await input.fill(String(value))
-  }
-  const user = await remoteUser()
-  await item('P1-SETTINGS-001', 'create source from UI', async () => {
-    await setField('label', 'settings-ui')
-    await setField('sshHost', sshDest)
-    await setField('sshUser', user)
-    await setField('sshPort', '22')
-    await setField('remoteDshHost', '127.0.0.1')
-    await setField('remoteDshPort', String(remotes[0].port))
-    await page.locator('[data-rd-settings-save="true"]').click()
-    await page.locator('[data-rd-settings-source-id="settings-ui"]').waitFor({ timeout: 10000 })
-    return 'settings-ui source card appeared'
+  await item('P1-SETTINGS-001', 'ssh config hosts listed in UI', async () => {
+    for (const remote of remotes) await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).waitFor({ timeout: 10000 })
+    return 'all ssh config hosts appeared in Remote Desktop settings'
   })
-  await item('P1-SETTINGS-002', 'edit source from UI', async () => {
-    await setField('label', 'settings-ui')
-    await setField('sshHost', sshDest)
-    await setField('sshUser', user)
-    await setField('sshPort', '22')
-    await setField('remoteDshHost', '127.0.0.1')
-    await setField('remoteDshPort', String(remotes[1].port))
-    await page.locator('[data-rd-settings-save="true"]').click()
-    await page.waitForTimeout(1000)
-    const source = (await api('/sources')).sources.find(s => s.id === 'settings-ui')
-    if (source?.remoteDshPort !== remotes[1].port) throw new Error('remoteDshPort edit did not persist')
-    return 'settings-ui remoteDshPort edited'
-  })
-  await item('P1-SETTINGS-003', 'disconnect source from UI', async () => {
-    await page.locator('[data-rd-settings-connect="settings-ui"]').click()
-    await waitForSourceState('settings-ui', 'connected')
-    await page.locator('[data-rd-settings-disconnect="settings-ui"]').click()
-    await waitForSourceState('settings-ui', 'disconnected')
-    return 'settings-ui disconnected from UI'
-  })
-  await item('P1-SETTINGS-004', 'delete source from UI', async () => {
-    await page.locator('[data-rd-settings-delete="settings-ui"]').click()
-    const deadline = Date.now() + 10000
-    while (Date.now() < deadline) {
-      if (!(await api('/sources')).sources.some(s => s.id === 'settings-ui')) return 'settings-ui deleted from UI'
-      await delay(500)
+  await item('P1-SETTINGS-002', 'connected statuses shown in UI', async () => {
+    for (const remote of remotes) {
+      const text = await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).innerText()
+      if (!text.includes('connected')) throw new Error(`${remote.id} status missing: ${text}`)
     }
-    throw new Error('settings-ui still present')
+    return 'connected status visible for both remotes'
   })
-  await item('P1-SETTINGS-005', 'validation errors shown', async () => {
-    await setField('label', '')
-    await setField('sshHost', '')
-    await setField('sshUser', '')
-    await page.locator('[data-rd-settings-save="true"]').click()
-    await page.getByText(/required/).waitFor({ timeout: 5000 })
-    return 'required-field validation message visible'
+  await item('P1-SETTINGS-003', 'disconnect host from UI', async () => {
+    await page.locator(`[data-rd-settings-disconnect="${remotes[1].id}"]`).click()
+    await waitForSourceState(remotes[1].id, 'disconnected')
+    const text = await page.locator(`[data-rd-settings-source-id="${remotes[1].id}"]`).innerText()
+    if (!text.includes('not connected')) throw new Error(`${remotes[1].id} not-connected text missing: ${text}`)
+    return `${remotes[1].id} disconnected from UI`
+  })
+  await item('P1-SETTINGS-004', 'connect host from UI', async () => {
+    await page.locator(`[data-rd-settings-connect="${remotes[1].id}"]`).click()
+    const source = await waitForSourceState(remotes[1].id, 'connected')
+    remotes[1].iframeUrl = source.iframeUrl
+    remotes[1].token = source.token
+    remotes[1].proxyOrigin = new URL(source.iframeUrl).origin
+    return `${remotes[1].id} reconnected from UI`
+  })
+  await item('P1-SETTINGS-005', 'manual source form removed', async () => {
+    const fields = await page.locator('[data-rd-settings-field]').count()
+    if (fields !== 0) throw new Error(`manual source fields still visible: ${fields}`)
+    return 'Remote Desktop settings is host-list based'
   })
   await page.keyboard.press('Escape').catch(() => {})
   await page.waitForTimeout(500)
@@ -236,7 +215,7 @@ async function waitForSourceState(id, state) {
   const deadline = Date.now() + 15000
   while (Date.now() < deadline) {
     const source = (await api('/sources')).sources.find(s => s.id === id)
-    if (source?.state === state) return
+    if (source?.state === state) return source
     await delay(500)
   }
   throw new Error(`${id} did not reach ${state}`)
@@ -308,17 +287,19 @@ NODE
 async function setupLocal() {
   await rm(localHome, { recursive: true, force: true })
   await mkdir(localHome, { recursive: true })
+  const user = await remoteUser()
+  await writeFile(localSshConfig, `Include ~/.ssh/config\n${remotes.map(remote => `Host ${remote.id}\n  HostName ${sshDest}\n  User ${user}\n`).join('')}`)
   await runHarness(['--profile', 'web', '--dump-config'], { DSH_HOME: localHome }, 60000)
   const profile = join(localHome, 'profiles/web')
   await patchProfilePackage(profile)
   await cmd('pnpm', ['install', '--no-frozen-lockfile'], { cwd: profile, env: { CI: 'true' }, timeoutMs: 120000 })
   const port = await freePort()
-  const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`], { cwd: harnessRoot, env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`], { cwd: harnessRoot, env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig }, stdio: ['ignore', 'pipe', 'pipe'] })
   started.push(child)
   child.stdout.on('data', b => { localLog += String(b) })
   child.stderr.on('data', b => { localLog += String(b) })
   localBase = `http://127.0.0.1:${port}`
-  await waitHttp(`${localBase}/remote-desktop/api/sources`, 60000)
+  await waitRemoteDesktopApi(60000)
   const workspace = await localRpc('workspace.create', { path: repoRoot })
   const session = await localRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
   localSessionId = session.sessionId
@@ -358,6 +339,7 @@ async function remoteUser() { return (await ssh('whoami')).trim() }
 async function cmd(command,args,options={}) { const r=spawnSync(command,args,{cwd:options.cwd??repoRoot,env:{...process.env,...(options.env??{})},encoding:'utf8',timeout:options.timeoutMs??30000,maxBuffer:1024*1024*20}); if(r.error) throw r.error; if(r.status!==0) throw new Error(`${command} ${args.join(' ')} failed (${r.status})\n${r.stdout}\n${r.stderr}`); return r.stdout }
 async function item(id,name,fn){const start=Date.now();try{const evidence=await fn(); report.push({id,name,status:'PASS',evidence,durationMs:Date.now()-start}); console.log(`PASS ${id} ${name}: ${evidence}`)}catch(e){report.push({id,name,status:'FAIL',evidence:e.message,durationMs:Date.now()-start}); console.error(`FAIL ${id} ${name}: ${e.message}`); throw new Error(`${id}: ${e.message}`)}}
 async function freePort(){const s=createServer();await new Promise((res,rej)=>{s.once('error',rej);s.listen(0,'127.0.0.1',res)});const a=s.address();const p=typeof a==='object'&&a?a.port:undefined;await new Promise(res=>s.close(res));if(!p)throw new Error('no port');return p}
+async function waitRemoteDesktopApi(ms){const d=Date.now()+ms;while(Date.now()<d){try{const r=await fetch(`${localBase}/remote-desktop/api/hosts`);const j=await r.json();if(j.ok===true)return}catch{}await delay(500)}throw new Error('timeout remote desktop api')}
 async function waitHttp(url,ms){const d=Date.now()+ms;while(Date.now()<d){try{const r=await fetch(url);if(r.status<500)return}catch{}await delay(500)}throw new Error('timeout '+url)}
 function delay(ms){return new Promise(r=>setTimeout(r,ms))}
 function sh(v){return `'${String(v).replaceAll("'","'\\''")}'`}

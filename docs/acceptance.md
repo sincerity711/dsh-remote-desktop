@@ -10,8 +10,8 @@ P0 is the hard gate for the first release. It uses one remote destination, `win-
 
 1. Prepare isolated local and remote dsh homes.
 2. Connect the local dsh page to the remote dsh instance through SSH.
-3. Show Local and `Remote: win-wsl` in the unified left sidebar.
-4. Switch from local to a remote session by clicking a remote session row, not the remote source header.
+3. Show local and remote workspaces as project rows in the unified left sidebar, with a `win-wsl` badge on remote project rows.
+4. Switch from local to a remote session by clicking a remote session row under a remote project, not the remote project header.
 5. Prove the remote iframe is visible, isolated, controlled by the companion, and rendering the remote dsh main area.
 6. Prove `dsh-better-sidebar` inside the remote iframe reads and executes on the remote machine.
 7. Switch back from remote to local by clicking a local session row and prove the remote iframe no longer owns the interaction path.
@@ -101,10 +101,10 @@ The script must run non-interactively. It may fail early when key-only SSH is un
 The script must drive a real browser through Playwright or an equivalent browser automation layer.
 
 1. Open the local dsh page.
-2. Assert the unified left sidebar shows both `Local` and `Remote: win-wsl`.
-3. Assert the remote source shows as connected.
-4. Assert a remote session row is visible under `Remote: win-wsl`.
-5. Click the remote source header and assert it does not activate the remote iframe.
+2. Assert the unified left sidebar shows local project rows and a remote project row with a `win-wsl` host badge.
+3. Assert the remote host appears connected in Remote Desktop settings and remote rows show a host badge.
+4. Assert a remote session row is visible under the remote project row with a `win-wsl` host badge.
+5. Click the remote project header and assert it does not activate the remote iframe.
 6. Click the remote session row.
 7. Assert the remote iframe is visible.
 8. Assert the iframe origin differs from the local dsh origin.
@@ -177,16 +177,16 @@ A failing run must exit non-zero and include the failing item id in stdout.
 ### SIDEBAR: unified left sidebar
 
 - **P0-SIDEBAR-001 source list visible**
-  PASS: the top-level left sidebar shows `Local` and `Remote: win-wsl`.
+  PASS: the top-level left sidebar shows project rows, and remote project rows carry a `win-wsl` host badge.
 
 - **P0-SIDEBAR-002 remote session visible**
-  PASS: the remote sentinel workspace/session is visible under `Remote: win-wsl`.
+  PASS: the remote sentinel workspace/session is visible as a project row with a `win-wsl` host badge.
 
 - **P0-SIDEBAR-003 active source indication**
-  PASS: after clicking a remote session row, `win-wsl` has an active/selected indication; after clicking a local session row, Local has an active/selected indication.
+  PASS: after clicking a remote session row, that remote session row has an active/selected indication; after clicking a local session row, the local session row has an active/selected indication.
 
-- **P0-SIDEBAR-004 source header does not switch active target**
-  PASS: clicking a remote source header toggles grouping/status only and does not show or activate the remote iframe.
+- **P0-SIDEBAR-004 project header does not switch active target**
+  PASS: clicking a remote project header toggles its sessions only and does not show or activate the remote iframe.
 
 ### SWITCH: source switching
 
@@ -318,5 +318,5 @@ Manual criteria:
 5. The remote iframe does not show a second expanded left sidebar.
 6. Remote Better Sidebar is visible, not clipped, and visually belongs to the remote iframe.
 7. Local Better Sidebar and remote Better Sidebar cannot be mistaken for the same instance.
-8. Settings copy explains that remote dsh must already be running and the companion must be installed remotely.
+8. Remote Desktop settings lists SSH config hosts and connected/not connected status.
 9. Failure messages are understandable without reading terminal logs.

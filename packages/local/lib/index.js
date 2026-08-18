@@ -6,6 +6,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
+export const DEFAULT_REMOTE_DSH_PORT = 30800
+
 export const name = 'dsh-remote-desktop'
 export const inject = ['webServer']
 
@@ -17,6 +19,70 @@ function statePath() {
   const root = process.env.DSH_REMOTE_DESKTOP_HOME
     ?? (process.env.DSH_HOME !== undefined ? join(process.env.DSH_HOME, 'remote-desktop') : join(homedir(), '.dsh', 'remote-desktop'))
   return join(root, 'sources.json')
+}
+
+
+function sshConfigPath() {
+  return process.env.DSH_REMOTE_DESKTOP_SSH_CONFIG ?? join(homedir(), '.ssh', 'config')
+}
+
+export function parseSshConfig(content) {
+  const hosts = []
+  let current = []
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+#.*$/, '').trim()
+    if (line === '' || line.startsWith('#')) continue
+    const match = /^(\S+)\s+(.*)$/.exec(line)
+    if (!match) continue
+    const key = match[1].toLowerCase()
+    const value = match[2].trim()
+    if (key === 'host') {
+      current = value.split(/\s+/).filter(Boolean)
+      for (const alias of current) {
+        if (!isConcreteSshHost(alias)) continue
+        hosts.push({ id: alias, label: alias, sshAlias: alias, remoteDshHost: DEFAULT_REMOTE_HOST, remoteDshPort: DEFAULT_REMOTE_DSH_PORT })
+      }
+      continue
+    }
+    for (const host of hosts) {
+      if (!current.includes(host.sshAlias)) continue
+      if (key === 'hostname') host.sshHost = value
+      else if (key === 'user') host.sshUser = value
+      else if (key === 'port') host.sshPort = Number(value)
+    }
+  }
+  return dedupeHosts(hosts)
+}
+
+function isConcreteSshHost(alias) {
+  return alias !== '' && !alias.includes('*') && !alias.includes('?') && alias !== '!'
+}
+
+function dedupeHosts(hosts) {
+  const seen = new Set()
+  const result = []
+  for (const host of hosts) {
+    if (seen.has(host.id)) continue
+    seen.add(host.id)
+    result.push(host)
+  }
+  return result
+}
+
+async function loadSshHosts() {
+  try {
+    return parseSshConfig(await readFile(sshConfigPath(), 'utf8'))
+  } catch (error) {
+    if (error?.code === 'ENOENT') return []
+    throw error
+  }
+}
+
+function mergeSshHosts(sshHosts, savedSources) {
+  const byId = new Map()
+  for (const host of sshHosts) byId.set(host.id, host)
+  for (const source of savedSources) byId.set(source.id, { ...byId.get(source.id), ...source })
+  return [...byId.values()]
 }
 
 function publicSource(source, runtime) {
@@ -50,21 +116,24 @@ function writeError(res, status, code, message) {
 }
 
 function normalizeSource(input) {
-  const id = String(input.id ?? slug(String(input.label ?? input.sshHost ?? randomUUID()))).trim()
+  const sshAlias = input.sshAlias !== undefined ? String(input.sshAlias).trim() : undefined
+  const id = String(input.id ?? sshAlias ?? slug(String(input.label ?? input.sshHost ?? randomUUID()))).trim()
   const label = String(input.label ?? id).trim()
-  const sshHost = String(input.sshHost ?? '').trim()
-  const sshUser = String(input.sshUser ?? '').trim()
-  if (id === '' || label === '' || sshHost === '' || sshUser === '') {
-    throw new Error('id, label, sshHost, and sshUser are required')
+  const sshHost = input.sshHost !== undefined ? String(input.sshHost).trim() : ''
+  const sshUser = input.sshUser !== undefined ? String(input.sshUser).trim() : ''
+  if (id === '' || label === '') throw new Error('id and label are required')
+  if ((sshAlias === undefined || sshAlias === '') && (sshHost === '' || sshUser === '')) {
+    throw new Error('sshAlias or sshHost and sshUser are required')
   }
   return {
     id,
     label,
-    sshHost,
-    sshUser,
+    ...(sshAlias !== undefined && sshAlias !== '' ? { sshAlias } : {}),
+    ...(sshHost !== '' ? { sshHost } : {}),
+    ...(sshUser !== '' ? { sshUser } : {}),
     sshPort: Number(input.sshPort ?? DEFAULT_SSH_PORT),
     remoteDshHost: String(input.remoteDshHost ?? DEFAULT_REMOTE_HOST).trim() || DEFAULT_REMOTE_HOST,
-    remoteDshPort: Number(input.remoteDshPort),
+    remoteDshPort: Number(input.remoteDshPort ?? DEFAULT_REMOTE_DSH_PORT),
   }
 }
 
@@ -73,7 +142,7 @@ function slug(value) {
   return base || `remote-${createHash('sha1').update(value).digest('hex').slice(0, 8)}`
 }
 
-async function loadSources() {
+async function loadSavedSources() {
   try {
     const parsed = JSON.parse(await readFile(statePath(), 'utf8'))
     return Array.isArray(parsed.sources) ? parsed.sources.map(normalizeSource) : []
@@ -81,6 +150,10 @@ async function loadSources() {
     if (error?.code === 'ENOENT') return []
     throw error
   }
+}
+
+async function loadSources() {
+  return mergeSshHosts(await loadSshHosts(), await loadSavedSources())
 }
 
 async function saveSources(sources) {
@@ -205,11 +278,12 @@ export async function apply(ctx) {
   const runtimes = new Map()
 
   async function persist(next) {
-    sources = next
-    await saveSources(sources)
+    await saveSources(next)
+    sources = await loadSources()
   }
 
   async function connectSource(id) {
+    sources = await loadSources()
     const source = sources.find(item => item.id === id)
     if (source === undefined) throw new Error(`unknown source ${id}`)
     const existing = runtimes.get(id)
@@ -222,11 +296,11 @@ export async function apply(ctx) {
       const sshArgs = [
         '-N',
         '-L', `127.0.0.1:${tunnelPort}:${source.remoteDshHost}:${source.remoteDshPort}`,
-        '-p', String(source.sshPort),
         '-o', 'ExitOnForwardFailure=yes',
         '-o', 'ServerAliveInterval=15',
         '-o', 'ServerAliveCountMax=3',
-        `${source.sshUser}@${source.sshHost}`,
+        ...(source.sshAlias && process.env.DSH_REMOTE_DESKTOP_SSH_CONFIG ? ['-F', sshConfigPath()] : []),
+        ...(source.sshAlias ? [source.sshAlias] : ['-p', String(source.sshPort), `${source.sshUser}@${source.sshHost}`]),
       ]
       const proc = spawn('ssh', sshArgs, { stdio: ['ignore', 'ignore', 'pipe'] })
       runtime.ssh = proc
@@ -285,15 +359,23 @@ export async function apply(ctx) {
       const suffix = pathname.slice(API_PREFIX.length) || '/'
       try {
         if (req.method === 'GET' && suffix === '/sources') {
+          sources = await loadSources()
           writeJson(res, 200, { ok: true, sources: sources.map(source => publicSource(source, runtimes.get(source.id))) })
+          return
+        }
+        if (req.method === 'GET' && suffix === '/hosts') {
+          sources = await loadSources()
+          writeJson(res, 200, { ok: true, hosts: sources.map(source => publicSource(source, runtimes.get(source.id))) })
           return
         }
         if (req.method === 'POST' && suffix === '/sources') {
           const input = await readJson(req)
           const source = normalizeSource(input)
-          const next = [...sources.filter(item => item.id !== source.id), source]
+          const saved = await loadSavedSources()
+          const next = [...saved.filter(item => item.id !== source.id), source]
           await persist(next)
-          writeJson(res, 200, { ok: true, source: publicSource(source, runtimes.get(source.id)) })
+          const current = sources.find(item => item.id === source.id) ?? source
+          writeJson(res, 200, { ok: true, source: publicSource(current, runtimes.get(source.id)) })
           return
         }
         if (req.method === 'POST' && suffix === '/connect') {
@@ -312,7 +394,7 @@ export async function apply(ctx) {
         if (req.method === 'POST' && suffix === '/delete') {
           const { id } = await readJson(req)
           disconnectSource(String(id))
-          await persist(sources.filter(item => item.id !== String(id)))
+          await persist((await loadSavedSources()).filter(item => item.id !== String(id)))
           writeJson(res, 200, { ok: true })
           return
         }

@@ -17,6 +17,8 @@ const requiredClientNeedles = [
   'data-rd-overlay-host',
   'data-rd-local-session-id',
   'data-rd-remote-session-id',
+  'data-rd-host-badge',
+  'data-rd-workspace-source-kind',
 ]
 for (const needle of requiredClientNeedles) {
   if (!localClient.includes(needle)) throw new Error(`packages/local/lib/client.js missing ${needle}`)
@@ -27,6 +29,8 @@ const forbiddenSidebarInline = [
   'styles.sourceHeader',
   'styles.activeSource',
   'rgba(57,100,254,.14)',
+  'Remote: ${source.label}',
+  'rd-sourceHeader',
 ]
 for (const needle of forbiddenSidebarInline) {
   if (localClient.includes(needle)) throw new Error(`legacy inline sidebar style remains: ${needle}`)

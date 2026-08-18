@@ -164,25 +164,18 @@ window.__ModuleLoader__.load({
         .rd-searchInput::placeholder { color: var(--dsw-alias-label-tertiary); }
         .rd-listArea { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-left: -4px; margin-right: calc(-1 * var(--rd-edge-inset)); padding-left: 4px; overflow: visible; }
         .rd-list { flex: 1; min-height: 0; overflow-y: auto; margin-left: -4px; margin-right: 2px; padding-left: 4px; padding-right: calc(var(--rd-edge-inset) - 10px); padding-bottom: 16px; scrollbar-gutter: stable; }
-        .rd-source { position: relative; }
-        .rd-source + .rd-source { margin-top: 4px; }
-        .rd-sourceHeader { display: flex; align-items: center; gap: 6px; height: 34px; box-sizing: border-box; border-radius: 8px; padding: 0 8px; cursor: default; user-select: none; color: var(--dsw-alias-label-primary); }
-        .rd-sourceHeader[data-collapsible="true"] { cursor: pointer; }
-        .rd-sourceHeader[data-collapsible="true"]:hover { background: var(--dsw-alias-interactive-bg-hover); }
-        .rd-sourceHeader[data-active="true"] .rd-sourceIcon { color: var(--dsw-alias-state-business-primary); }
-        .rd-sourceIcon { flex: none; width: 16px; height: 20px; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); font-size: 10px; }
-        .rd-sourceLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; }
-        .rd-sourceState { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 20px; }
+        .rd-hostBadge { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 84px; min-width: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 20px; }
+        .rd-hostLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .rd-stateDot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; background: var(--dsw-alias-label-tertiary); }
         .rd-state-ready, .rd-state-connected, .rd-state-active { background: var(--dsw-alias-state-success-primary, #3bb273); }
         .rd-state-error { background: var(--dsw-alias-state-error-primary); }
         .rd-workspace { position: relative; }
         .rd-workspace + .rd-workspace { margin-top: 2px; }
-        .rd-workspaceHeader { display: flex; align-items: center; gap: 6px; height: 34px; box-sizing: border-box; border-radius: 8px; padding: 0 8px 0 18px; cursor: pointer; user-select: none; color: var(--dsw-alias-label-primary); }
+        .rd-workspaceHeader { display: flex; align-items: center; gap: 6px; height: 34px; box-sizing: border-box; border-radius: 8px; padding: 0 8px; cursor: pointer; user-select: none; color: var(--dsw-alias-label-primary); }
         .rd-workspaceHeader:hover { background: var(--dsw-alias-interactive-bg-hover); }
         .rd-folder { flex: none; width: 16px; color: var(--dsw-alias-label-tertiary); }
         .rd-workspaceTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; }
-        .rd-sessionRow { display: flex; align-items: center; gap: 0; height: 32px; box-sizing: border-box; border: 0; border-radius: 8px; padding: 0 8px 0 40px; width: 100%; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; animation: rd-row-in 150ms var(--ds-ease-in-out); }
+        .rd-sessionRow { display: flex; align-items: center; gap: 0; height: 32px; box-sizing: border-box; border: 0; border-radius: 8px; padding: 0 8px 0 30px; width: 100%; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; animation: rd-row-in 150ms var(--ds-ease-in-out); }
         .rd-sessionRow:hover, .rd-sessionRow[data-selected="true"] { background: var(--dsw-alias-interactive-bg-hover); }
         .rd-sessionStatus { flex: none; width: 16px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
         .rd-sessionTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 6px 0 4px; font-size: 14px; line-height: 20px; }
@@ -202,7 +195,6 @@ window.__ModuleLoader__.load({
       const remote = useRemote(s => s)
       const localSessions = props.useSessions(s => s)
       const localWorkspaces = props.useWorkspaces(s => s.items)
-      const [collapsedSources, setCollapsedSources] = useState({})
       const [collapsedWorkspaces, setCollapsedWorkspaces] = useState({})
       const [query, setQuery] = useState('')
       useEffect(() => installCss(), [])
@@ -214,35 +206,35 @@ window.__ModuleLoader__.load({
       const localById = localSessions.byId || {}
       const textQuery = query.trim().toLowerCase()
       const active = remote.active
-      const toggleSource = (id) => setCollapsedSources(value => ({ ...value, [id]: !value[id] }))
       const toggleWorkspace = (key) => setCollapsedWorkspaces(value => ({ ...value, [key]: !value[key] }))
-      const sourceViews = useMemo(() => {
-        const local = {
-          id: LOCAL_SOURCE_ID,
-          kind: 'local',
-          label: 'Local',
-          state: active.kind === 'local' ? 'active' : 'ready',
-          workspaces: localWorkspaces.map(ws => ({
+      const workspaceViews = useMemo(() => {
+        const rows = localWorkspaces.map(ws => ({
+          source: { id: LOCAL_SOURCE_ID, kind: 'local', label: 'Local', state: active.kind === 'local' ? 'active' : 'ready' },
+          workspace: {
             id: String(ws.workspaceId),
             title: ws.title || ws.path || 'Workspace',
             path: ws.path,
             sessions: (ws.sessionIds || []).map(id => localById[id] ? { ...localById[id], sessionId: id } : undefined).filter(row => row && row.origin !== 'subagent'),
-          })),
-          error: null,
-        }
-        const remotes = remote.sources.map(source => {
+          },
+        }))
+        for (const source of remote.sources) {
+          if (source.state !== 'connected') continue
           const snap = remote.snapshots[source.id]
-          return {
-            id: source.id,
-            kind: 'remote',
-            label: `Remote: ${source.label}`,
-            state: source.state,
-            error: source.error || (snap?.state === 'error' ? snap.error : null),
-            workspaces: byWorkspace(snap).map(ws => ({ id: String(ws.workspaceId), title: ws.title || ws.path || 'Workspace', path: ws.path, sessions: ws.sessions })),
+          for (const ws of byWorkspace(snap)) {
+            rows.push({
+              source: { id: source.id, kind: 'remote', label: source.label, state: source.state, error: source.error || (snap?.state === 'error' ? snap.error : null) },
+              workspace: { id: String(ws.workspaceId), title: ws.title || ws.path || 'Workspace', path: ws.path, sessions: ws.sessions },
+            })
           }
-        })
-        return [local, ...remotes]
-      }, [active.kind, localWorkspaces, localById, remote.sources, remote.snapshots])
+        }
+        return rows.map(row => ({
+          ...row,
+          workspace: {
+            ...row.workspace,
+            sessions: textQuery === '' ? row.workspace.sessions : row.workspace.sessions.filter(session => titleOfSession(session).toLowerCase().includes(textQuery) || String(session.sessionId).toLowerCase().includes(textQuery)),
+          },
+        })).filter(row => textQuery === '' || row.workspace.sessions.length > 0 || row.workspace.title.toLowerCase().includes(textQuery))
+      }, [active.kind, localWorkspaces, localById, remote.sources, remote.snapshots, textQuery])
 
       if (!props.wide) {
         return h('div', { className: 'rd-browser', 'data-wide': 'false' },
@@ -261,68 +253,32 @@ window.__ModuleLoader__.load({
         remote.error && h('div', { className: 'rd-rowMessage rd-error' }, remote.error),
         h('div', { className: 'rd-listArea' },
           h('div', { className: 'rd-list', role: 'tree' },
-            sourceViews.map(source => h(SourceSection, {
-              key: source.id,
+            workspaceViews.map(({ source, workspace }) => h(WorkspaceGroup, {
+              key: `${source.id}:${workspace.id}`,
               source,
+              workspace,
               active,
-              query: textQuery,
-              collapsed: collapsedSources[source.id] === true,
-              collapsedWorkspaces,
-              toggleSource,
+              collapsed: collapsedWorkspaces[`${source.id}:${workspace.id}`] === true,
               toggleWorkspace,
               openLocal: props.openLocal,
             })),
-            h('div', { className: 'rd-rowMessage rd-muted' }, 'Configure remotes in Settings → Remote Desktop.')
+            textQuery !== '' && workspaceViews.length === 0 && h('div', { className: 'rd-rowMessage rd-muted' }, 'No matching sessions'),
+            h('div', { className: 'rd-rowMessage rd-muted' }, 'Configure hosts in Settings → Remote Desktop.')
           )
         )
       )
     }
 
-    function SourceSection({ source, active, query, collapsed, collapsedWorkspaces, toggleSource, toggleWorkspace, openLocal }) {
-      const activeInSource = active.kind === source.kind && (source.kind === 'local' || active.sourceId === source.id)
-      const state = source.state || (source.kind === 'local' ? 'ready' : 'disconnected')
-      const canCollapse = source.workspaces.length > 0 || source.error || state !== 'connected'
-      const visibleWorkspaces = source.workspaces.map(ws => ({
-        ...ws,
-        sessions: query === '' ? ws.sessions : ws.sessions.filter(row => titleOfSession(row).toLowerCase().includes(query) || String(row.sessionId).toLowerCase().includes(query)),
-      })).filter(ws => query === '' || ws.sessions.length > 0)
-      const isUnavailable = source.kind === 'remote' && state !== 'connected'
-      return h('section', { className: 'rd-source', 'data-rd-source-section': source.id },
-        h('div', {
-          className: 'rd-sourceHeader',
-          role: 'group',
-          'data-rd-source-id': source.id,
-          'data-rd-active': activeInSource ? 'true' : 'false',
-          'data-collapsible': canCollapse ? 'true' : 'false',
-          onClick: canCollapse ? () => toggleSource(source.id) : undefined,
-        },
-          h('span', { className: 'rd-sourceIcon' }, collapsed ? '▶' : '▼'),
-          h('span', { className: `rd-stateDot rd-state-${state}` }),
-          h('span', { className: 'rd-sourceLabel' }, source.label),
-          activeInSource && h('span', { className: 'rd-activeText' }, 'active'),
-          h('span', { className: 'rd-sourceState' }, state)
-        ),
-        !collapsed && source.error && h('div', { className: 'rd-rowMessage rd-error' }, source.error),
-        !collapsed && isUnavailable && !source.error && h('div', { className: 'rd-rowMessage rd-muted' }, 'Disconnected'),
-        !collapsed && visibleWorkspaces.map(ws => h(WorkspaceGroup, {
-          key: `${source.id}:${ws.id}`,
-          source,
-          workspace: ws,
-          active,
-          collapsed: collapsedWorkspaces[`${source.id}:${ws.id}`] === true,
-          toggleWorkspace,
-          openLocal,
-        })),
-        !collapsed && query !== '' && visibleWorkspaces.length === 0 && !source.error && h('div', { className: 'rd-rowMessage rd-muted' }, 'No matching sessions')
-      )
-    }
-
     function WorkspaceGroup({ source, workspace, active, collapsed, toggleWorkspace, openLocal }) {
       const key = `${source.id}:${workspace.id}`
-      return h('div', { className: 'rd-workspace', 'data-rd-workspace-id': workspace.id, 'data-rd-source-id': source.id },
+      return h('div', { className: 'rd-workspace', 'data-rd-workspace-id': workspace.id, 'data-rd-source-id': source.id, 'data-rd-workspace-source-kind': source.kind },
         h('div', { className: 'rd-workspaceHeader', role: 'treeitem', 'aria-expanded': !collapsed, onClick: () => toggleWorkspace(key), title: workspace.path || workspace.title },
           h('span', { className: 'rd-folder' }, collapsed ? '▸' : '▾'),
-          h('span', { className: 'rd-workspaceTitle' }, workspace.title)
+          h('span', { className: 'rd-workspaceTitle' }, workspace.title),
+          source.kind === 'remote' && h('span', { className: 'rd-hostBadge', 'data-rd-host-badge': source.id },
+            h('span', { className: 'rd-hostLabel' }, source.label),
+            h('span', { className: `rd-stateDot rd-state-${source.state || 'connected'}` })
+          )
         ),
         !collapsed && workspace.sessions.map(row => h(SessionRow, { key: row.sessionId, source, row, active, openLocal }))
       )
@@ -463,29 +419,30 @@ window.__ModuleLoader__.load({
 
     function SettingsSection() {
       const sources = useRemote(s => s.sources)
-      const [draft, setDraft] = useState({ label: '', sshHost: '', sshUser: '', sshPort: 22, remoteDshHost: '127.0.0.1', remoteDshPort: 30800 })
       const [message, setMessage] = useState('')
       useEffect(() => { void store.refreshSources() }, [])
-      const save = async () => {
-        try { await store.saveSource(draft); setMessage('Saved') } catch (e) { setMessage(e.message || String(e)) }
+      const connect = async (id) => {
+        try { await store.connect(id); setMessage('Connected') } catch (e) { setMessage(e.message || String(e)) }
+      }
+      const disconnect = async (id) => {
+        try { await store.disconnect(id); setMessage('Disconnected') } catch (e) { setMessage(e.message || String(e)) }
       }
       return h('div', { style: styles.settings, 'data-rd-settings-section': 'true' },
         h('h2', null, 'Remote Desktop'),
-        h('p', null, 'Connect to an already-running remote dsh web profile through SSH key authentication.'),
-        ['label', 'sshHost', 'sshUser', 'sshPort', 'remoteDshHost', 'remoteDshPort'].map(key => h('label', { key, style: styles.label },
-          key,
-          h('input', { style: styles.input, 'data-rd-settings-field': key, value: draft[key], onChange: e => setDraft({ ...draft, [key]: e.target.value }) })
-        )),
-        h('button', { style: styles.button, 'data-rd-settings-save': 'true', onClick: save }, 'Save source'),
-        message && h('div', { style: message.includes('required') ? styles.error : styles.hint }, message),
-        h('h3', null, 'Sources'),
+        h('p', null, 'Hosts come from this machine\'s SSH config. A host is connected when its remote dsh web profile and companion answer through SSH.'),
+        message && h('div', { style: message.toLowerCase().includes('error') || message.toLowerCase().includes('required') ? styles.error : styles.hint }, message),
+        h('h3', null, 'SSH hosts'),
+        sources.length === 0 && h('div', { style: styles.hint }, 'No concrete Host entries found in ~/.ssh/config.'),
         sources.map(source => h('div', { key: source.id, style: styles.card, 'data-rd-settings-source-id': source.id },
-          h('strong', null, source.label), ' ', h('span', null, source.state),
+          h('div', { style: styles.hostRow },
+            h('strong', null, source.label),
+            h('span', { style: styles.hostStatus, 'data-rd-settings-host-state': source.state }, source.state === 'connected' ? 'connected' : 'not connected')
+          ),
+          h('div', { style: styles.hint }, [source.sshUser, source.sshHost].filter(Boolean).join('@') || source.sshAlias || source.id),
           source.error && h('div', { style: styles.error }, source.error),
           h('div', { style: styles.actions },
-            h('button', { 'data-rd-settings-connect': source.id, onClick: () => void store.connect(source.id) }, 'Connect'),
-            h('button', { 'data-rd-settings-disconnect': source.id, onClick: () => void store.disconnect(source.id) }, 'Disconnect'),
-            h('button', { 'data-rd-settings-delete': source.id, onClick: () => void store.delete(source.id) }, 'Delete')
+            h('button', { 'data-rd-settings-connect': source.id, onClick: () => void connect(source.id) }, 'Connect'),
+            h('button', { 'data-rd-settings-disconnect': source.id, onClick: () => void disconnect(source.id) }, 'Disconnect')
           )
         ))
       )
@@ -535,6 +492,8 @@ window.__ModuleLoader__.load({
       button: { padding: '8px 12px', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2, #777)', background: 'transparent', color: 'inherit' },
       card: { border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.35))', borderRadius: 10, padding: 10, margin: '8px 0' },
       actions: { display: 'flex', gap: 8, marginTop: 8 },
+      hostRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+      hostStatus: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12 },
     }
 
     return module.exports

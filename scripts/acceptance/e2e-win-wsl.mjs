@@ -18,6 +18,7 @@ const remoteSentinelDir = '/tmp/dsh-remote-desktop-sentinel'
 const remotePort = Number(args['remote-port'] ?? 30800)
 const artifactsRoot = join(repoRoot, '.acceptance', 'artifacts')
 const localHome = resolve(repoRoot, '.acceptance', 'local-home')
+const localSshConfig = join(localHome, 'ssh-config')
 const localPlugin = resolve(repoRoot, 'packages/local')
 const companionSource = resolve(repoRoot, 'packages/companion')
 const runId = new Date().toISOString().replaceAll(/[:.]/g, '-')
@@ -48,7 +49,8 @@ try {
   await item('P0-ENV-001', 'local home isolation', async () => {
     await rm(localHome, { recursive: true, force: true })
     await mkdir(localHome, { recursive: true })
-    return `local DSH_HOME=${localHome}`
+    await writeFile(localSshConfig, `Include ~/.ssh/config\nHost ${sshDest}\n  HostName ${sshDest}\n  User ${await remoteUser()}\n`)
+    return `local DSH_HOME=${localHome}, ssh config=${localSshConfig}`
   })
   await item('P0-ENV-002', 'remote home isolation', async () => {
     await ssh(`rm -rf ${sh(remoteHome)} ${sh(remoteSentinelDir)} && mkdir -p ${sh(remoteSentinelDir)}`)
@@ -140,20 +142,21 @@ async function setupLocal() {
     const logPath = join(artifactDir, 'local-dsh-live.log')
     const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(localPort), '--trusted-host', `127.0.0.1:${localPort}`], {
       cwd: harnessRoot,
-      env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1' },
+      env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     started.push(child)
     child.stdout.on('data', b => { localDshLog += String(b) })
     child.stderr.on('data', b => { localDshLog += String(b) })
     localBase = `http://127.0.0.1:${localPort}`
-    await waitHttp(`${localBase}/remote-desktop/api/sources`, 60000)
+    await waitRemoteDesktopApi(60000)
     await writeFile(logPath, localDshLog)
     return `${localBase} booted and management API answers`
   })
   await item('P0-BOOT-003', 'tunnel connects', async () => {
-    await api('/sources', { method: 'POST', body: JSON.stringify({ id: 'win-wsl', label: 'win-wsl', sshHost: sshDest, sshUser: (await remoteUser()), sshPort: 22, remoteDshHost: '127.0.0.1', remoteDshPort: remotePort }) })
-    const source = (await api('/connect', { method: 'POST', body: JSON.stringify({ id: 'win-wsl' }) })).source
+    const hosts = (await api('/hosts')).hosts
+    if (!hosts.some(host => host.id === sshDest)) throw new Error(`${sshDest} missing from ssh config hosts`)
+    const source = (await api('/connect', { method: 'POST', body: JSON.stringify({ id: sshDest }) })).source
     if (source.state !== 'connected') throw new Error(`state=${source.state}`)
     if (!/^http:\/\/127\.0\.0\.1:\d+\//.test(source.iframeUrl ?? '')) throw new Error(`bad iframeUrl ${source.iframeUrl}`)
     remoteProxyOrigin = new URL(source.iframeUrl).origin
@@ -167,7 +170,7 @@ async function setupData() {
     const workspace = await remoteRpc('workspace.create', { path: remoteSentinelDir })
     const session = await remoteRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
     remoteSessionId = session.sessionId
-    const snapshot = await api(`/snapshot?id=win-wsl`)
+    const snapshot = await api(`/snapshot?id=${encodeURIComponent(sshDest)}`)
     const listed = snapshot.snapshot.workspaces.items.some(ws => ws.sessionIds.includes(remoteSessionId))
     if (!listed) throw new Error(`remote session ${remoteSessionId} not in snapshot`)
     return `remote workspace ${workspace.workspace.workspaceId}, session ${remoteSessionId}`
@@ -200,30 +203,30 @@ async function runBrowserChecks() {
     await page.goto(localBase, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(8000)
     await dismissTopLevelBlockingUi(page)
-    await item('P0-SIDEBAR-001', 'source list visible', async () => {
-      await expectText(page, 'Local')
-      await expectText(page, 'Remote: win-wsl')
+    await item('P0-SIDEBAR-001', 'project list visible with host badge', async () => {
+      await page.locator('[data-rd-local-session-id]').first().waitFor({ timeout: 10000 })
+      await page.locator(`[data-rd-host-badge="${sshDest}"]`).first().waitFor({ timeout: 10000 })
       await page.screenshot({ path: join(artifactDir, '01-local-ready.png'), fullPage: true })
-      return 'Local and Remote: win-wsl visible'
+      return `project-first sidebar shows local sessions and ${sshDest} host badge`
     })
     await item('P0-ARTIFACT-001', 'screenshots initial', async () => {
       if (!existsSync(join(artifactDir, '01-local-ready.png'))) throw new Error('01-local-ready.png missing')
       return '01-local-ready.png saved'
     })
-    await item('P0-SIDEBAR-003', 'active source indication local', async () => {
-      const body = await page.locator('body').innerText()
-      if (!body.includes('Local') || !body.includes('active')) throw new Error('Local active indication missing')
-      return 'Local active indication visible'
+    await item('P0-SIDEBAR-003', 'active local session indication', async () => {
+      const rows = await page.locator('[data-rd-local-session-id]').count()
+      if (rows < 1) throw new Error('local session row missing')
+      return 'local session row visible'
     })
-    await item('P0-SIDEBAR-004', 'source header does not switch active target', async () => {
-      const header = page.locator('.rd-sourceHeader[data-rd-source-id="win-wsl"]').first()
+    await item('P0-SIDEBAR-004', 'workspace header does not switch active target', async () => {
+      const header = page.locator(`[data-rd-workspace-source-kind="remote"] .rd-workspaceHeader`).first()
       await header.click()
       await page.waitForTimeout(500)
       const overlayActive = await page.locator('[data-rd-overlay-active="true"]').count()
       const visible = await page.locator('iframe').first().evaluate(frame => getComputedStyle(frame).display !== 'none').catch(() => false)
       await header.click()
-      if (overlayActive > 0 || visible) throw new Error('remote source header activated iframe')
-      return 'remote source header only toggled grouping'
+      if (overlayActive > 0 || visible) throw new Error('remote workspace header activated iframe')
+      return 'remote workspace header only toggled sessions'
     })
     await item('P0-SWITCH-001', 'local to remote', async () => {
       await page.locator(`[data-rd-remote-session-id="${remoteSessionId}"]`).click()
@@ -323,8 +326,8 @@ async function runBrowserChecks() {
       const frame = await mustRemoteFrame(page)
       const visible = await frame.locator('[class*="sidebarCol"]').evaluateAll(nodes => nodes.some(n => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().width > 10))
       if (visible) throw new Error('iframe sidebarCol still visible')
-      await expectText(page, 'Local')
-      return 'iframe sidebar hidden, top-level Local still visible'
+      await page.locator('[data-rd-local-session-id]').first().waitFor({ timeout: 10000 })
+      return 'iframe sidebar hidden, top-level local sessions still visible'
     })
     await item('P0-IFRAME-004', 'remote main area visible', async () => {
       const frame = await mustRemoteFrame(page)
@@ -397,8 +400,10 @@ async function runBrowserChecks() {
     })
     await item('P0-SIDEBAR-003', 'active source indication remote', async () => {
       const body = await page.locator('body').innerText()
-      if (!body.includes('Remote: win-wsl') || !body.includes('connected')) throw new Error('remote status missing')
-      return 'Remote: win-wsl connected visible'
+      if (!body.includes(sshDest)) throw new Error('remote host badge text missing')
+      const badges = await page.locator(`[data-rd-host-badge="${sshDest}"]`).count()
+      if (badges < 1) throw new Error('remote host badge missing')
+      return `${sshDest} host badge visible`
     }, { duplicateOk: true })
     await item('P0-SWITCH-003', 'remote to local', async () => {
       await page.locator('[data-rd-local-session-id]').first().click()
@@ -590,6 +595,19 @@ async function freePort() {
   await new Promise(resolve => server.close(resolve))
   if (port === undefined) throw new Error('no free port')
   return port
+}
+
+async function waitRemoteDesktopApi(timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${localBase}/remote-desktop/api/hosts`)
+      const json = await res.json()
+      if (json.ok === true) return
+    } catch {}
+    await delay(500)
+  }
+  throw new Error('timeout remote desktop api')
 }
 
 async function waitHttp(url, timeoutMs) {
