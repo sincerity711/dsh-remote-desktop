@@ -19,7 +19,7 @@ const requiredClientNeedles = [
   'data-rd-remote-session-id',
   'data-rd-host-badge',
   'data-rd-workspace-source-kind',
-  'settings.hostFilter',
+  'sidebar.settings',
   'data-rd-settings-host-filter',
   'installHostApiFetchPatch',
   '/remote-desktop/api/host-api',

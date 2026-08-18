@@ -207,6 +207,24 @@ window.__ModuleLoader__.load({
         .rd-error { color: var(--dsw-alias-state-error-primary); white-space: pre-wrap; }
         .rd-muted { color: var(--dsw-alias-label-tertiary); }
         .rd-activeText { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+        .rd-settingsTrigger { flex: none; display: flex; align-items: center; gap: 8px; width: calc(100% + 8px); height: 34px; margin: 4px -4px; padding: 6px 2px 6px 10px; box-sizing: border-box; border: none; border-radius: 12px; background: transparent; cursor: pointer; color: var(--dsw-alias-label-primary); font: inherit; font-size: 14px; line-height: 22px; }
+        .rd-settingsTrigger:hover { background: var(--dsw-alias-interactive-bg-hover); }
+        .rd-settingsOverlay { position: fixed; inset: 0; z-index: 2147482500; display: flex; align-items: center; justify-content: center; }
+        .rd-settingsMask { position: absolute; inset: 0; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,.24)); backdrop-filter: var(--dsw-mask-blur, blur(8px)); }
+        .rd-settingsPanel { position: relative; z-index: 1; display: flex; width: 800px; height: min(800px, calc(100vh - 48px)); max-width: calc(100vw - 48px); border-radius: 24px; overflow: hidden; background: var(--dsw-alias-bg-layer-2, #fff); box-shadow: var(--dsw-shadow-lv3, 0 10px 40px rgba(0,0,0,.18)); color: var(--dsw-alias-label-primary); }
+        .rd-settingsNav { flex: none; display: flex; flex-direction: column; gap: 18px; width: 188px; padding: 22px 12px 0; box-sizing: border-box; }
+        .rd-settingsTitle { padding: 0 12px; font-size: 16px; line-height: 24px; font-weight: 500; }
+        .rd-settingsNavList { display: flex; flex-direction: column; gap: 4px; }
+        .rd-settingsNavCell { display: flex; align-items: center; gap: 8px; height: 40px; padding: 9px 16px 9px 12px; box-sizing: border-box; border: none; border-radius: 12px; background: transparent; cursor: pointer; color: inherit; font: inherit; font-size: 14px; line-height: 22px; text-align: left; }
+        .rd-settingsNavCell:hover { background: var(--dsw-specific-sidebar-nav-item-hover, var(--dsw-alias-interactive-bg-hover)); }
+        .rd-settingsNavCell.rd-settingsActive { background: var(--dsw-specific-sidebar-nav-item-active, var(--dsw-alias-interactive-bg-hover)); }
+        .rd-settingsNavIcon { flex: none; }
+        .rd-settingsNavLabel { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .rd-settingsContent { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+        .rd-settingsHeader { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 54px; padding: 20px 14px 8px 10px; box-sizing: border-box; }
+        .rd-settingsClose { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 28px; background: transparent; cursor: pointer; color: inherit; font-size: 18px; }
+        .rd-settingsClose:hover { background: var(--dsw-alias-interactive-bg-hover); }
+        .rd-settingsOptions { flex: 1; min-height: 0; padding: 0 24px 24px; overflow-y: auto; }
         @keyframes rd-row-in { from { opacity: 0; } }
         @media (prefers-reduced-motion: reduce) { .rd-sessionRow { animation: none; } }
       `
@@ -440,6 +458,54 @@ window.__ModuleLoader__.load({
       return String(u)
     }
 
+
+    function slotLabel(label) {
+      if (typeof label === 'function') return String(label())
+      return label == null ? '' : String(label)
+    }
+
+    function SettingsShell(props) {
+      const rows = props.useSettingsSections(s => s)
+      const [open, setOpen] = useState(false)
+      const [activeId, setActiveId] = useState(undefined)
+      const [activeHostId, setActiveHostIdState] = useState('local')
+      const active = rows.find(row => row.id === activeId)?.id ?? rows[0]?.id
+      const setActiveHostId = (id) => { setSettingsHost(id); setActiveHostIdState(id) }
+      const close = () => { setOpen(false); setActiveId(undefined) }
+      useEffect(() => {
+        if (!open) return
+        const onKeyDown = (event) => { if (event.key === 'Escape') close() }
+        document.addEventListener('keydown', onKeyDown)
+        return () => document.removeEventListener('keydown', onKeyDown)
+      }, [open])
+      return h(React.Fragment, null,
+        h('button', { type: 'button', className: 'rd-settingsTrigger', onClick: () => setOpen(true), 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' }, props.wide === false ? '⚙' : '⚙ Settings'),
+        open && h('div', { className: 'rd-settingsOverlay', role: 'presentation' },
+          h('div', { className: 'rd-settingsMask', onClick: close }),
+          h('div', { className: 'rd-settingsPanel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings' },
+            h('nav', { className: 'rd-settingsNav' },
+              h('div', { className: 'rd-settingsTitle' }, 'Settings'),
+              h('div', { className: 'rd-settingsNavList' }, rows.map(row => h('button', { key: row.id, type: 'button', className: `rd-settingsNavCell${row.id === active ? ' rd-settingsActive' : ''}`, onClick: () => setActiveId(row.id), 'aria-current': row.id === active ? 'true' : undefined },
+                h('span', { className: 'rd-settingsNavIcon' }, '⚙'),
+                h('span', { className: 'rd-settingsNavLabel' }, row.label)
+              )))
+            ),
+            h('div', { className: 'rd-settingsContent' },
+              h('div', { className: 'rd-settingsHeader' },
+                h(SettingsHostFilter, { activeHostId, setActiveHostId }),
+                h('button', { type: 'button', className: 'rd-settingsClose', onClick: close, 'aria-label': 'Close' }, '×')
+              ),
+              h('div', { className: 'rd-settingsOptions' }, active !== undefined && props.renderSlot('settings.section', { close, activeHostId }, { only: active }))
+            )
+          )
+        )
+      )
+    }
+
+    function GeneralSection(props) {
+      return h('div', { style: styles.settings }, props.renderSlot('settings.general.item', {}))
+    }
+
     function SettingsHostFilter({ activeHostId, setActiveHostId }) {
       const sources = useRemote(s => s.sources)
       const [open, setOpen] = useState(false)
@@ -527,9 +593,39 @@ window.__ModuleLoader__.load({
         id: 'remote-desktop-overlay',
         order: 100,
       }, RemoteOverlay))
-      ctx.slots.inject('settings.hostFilter', () => ctx.slots.register({
-        name: 'settings.hostFilter',
-      }, SettingsHostFilter))
+      let rowsVersion = -1
+      let rows = []
+      const settingsShellInjected = () => ({
+        hooks: {
+          settingsSections: {
+            getSnapshot: () => {
+              const version = ctx.slots.getVersion('settings.section')
+              if (version !== rowsVersion) {
+                rowsVersion = version
+                rows = ctx.slots.entries('settings.section')
+                  .map(entry => ({ id: entry.options.id || '', order: entry.options.order || 0, label: slotLabel(entry.options.label) }))
+                  .sort((a, b) => a.order - b.order)
+              }
+              return rows
+            },
+            subscribe: listener => ctx.slots.subscribe('settings.section', listener),
+          },
+        },
+      })
+      ctx.slots.inject('sidebar.settings', () => ctx.slots.register({
+        name: 'sidebar.settings',
+        children: {
+          'settings.section': { kind: 'list', scope: 'root' },
+        },
+        inject: settingsShellInjected,
+      }, SettingsShell))
+      ctx.slots.inject('settings.section', () => ctx.slots.register({
+        name: 'settings.section',
+        id: 'general',
+        order: 0,
+        label: 'General',
+        children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
+      }, GeneralSection))
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section',
         id: 'remote-desktop',

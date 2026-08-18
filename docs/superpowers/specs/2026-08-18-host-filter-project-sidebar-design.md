@@ -4,7 +4,7 @@
 
 `dsh-remote-desktop` will stop grouping the left sidebar by remote source. The sidebar will show projects/workspaces as the primary list, with a small host badge on remote projects. Settings will gain a Codex-style global Host filter so the same settings surface can switch between local settings and a connected remote host's settings. Remote hosts are discovered from `~/.ssh/config` on the main host.
 
-This design intentionally separates the work into two stages: first the project-first sidebar and SSH host discovery in `dsh-remote-desktop`, then host-scoped settings support across `deepseek-harness` and `dsh-remote-desktop`.
+This design intentionally separates the work into two stages: first the project-first sidebar and SSH host discovery in `dsh-remote-desktop`, then a `dsh-remote-desktop`-owned Settings shell fork that is kept in sync with upstream by rebase.
 
 ## Goals
 
@@ -93,7 +93,7 @@ Disconnecting a host kills its SSH process, closes its proxy server, removes act
 
 ## Settings Host filter
 
-The settings shell in `deepseek-harness` will gain a global Host filter in the settings header, matching the Codex reference behavior.
+The `dsh-remote-desktop` copied Settings shell renders a global Host filter in the settings header, matching the Codex reference behavior.
 
 Host filter entries:
 
@@ -126,14 +126,15 @@ Remote context:
 settings component -> host-aware settings client -> dsh-remote-desktop proxy -> remote DSH settings API -> remote ctx.settings
 ```
 
-This requires a small settings seam in `deepseek-harness`:
+This is implemented as a Settings shell fork in `dsh-remote-desktop`:
 
-- A way for a plugin to provide host filter entries and status.
-- A way for the settings shell to store and expose the active settings host.
-- A way for settings API calls to be routed by active host.
-- A not-connected placeholder surface for selected remote hosts.
+- `dsh-remote-desktop` disables `ui-settings-general` in its patch.
+- The copied shell owns the Host filter and active host viewing state.
+- The copied shell declares and renders `settings.section` contributions.
+- A fetch routing shim sends `/api/*` calls through the selected connected host's proxy while a remote host is selected.
+- A not-connected placeholder is shown for disconnected selected hosts.
 
-The implementation should avoid DOM patching the settings modal. If the current settings shell lacks the needed extension point, add a typed slot or service to the settings shell.
+The implementation avoids DOM patching the settings modal; the fork is an explicit plugin-level replacement that must be rebased when upstream Settings shell behavior changes.
 
 ## Remote Desktop settings page
 
@@ -211,7 +212,7 @@ Run for every implementation change.
 - Static checks assert remote workspace rows carry host badge data attributes.
 - Static or unit checks cover SSH config parsing, including wildcard exclusion.
 - Static checks assert the companion origin/token validation remains present.
-- If `deepseek-harness` is changed, run the smallest relevant typecheck/test target for the settings shell and API routing changes.
+- Because this route does not modify `deepseek-harness`, Settings shell coverage lives in `dsh-remote-desktop` static, unit, and acceptance checks.
 
 ### G1: sidebar and single-host acceptance
 
@@ -279,16 +280,7 @@ Update these `dsh-remote-desktop` files as part of implementation:
 - `packages/companion/README.md`
   - Clarify that the companion still validates parent origin/token for iframe session open.
 
-Update these `deepseek-harness` specs/docs when Stage 2 lands:
-
-- `packages/client/ui-settings/src/client/contract/slots.ts` or the new settings host seam file
-  - Document the Host filter provider slot/service and active-host owner props.
-- `packages/client/ui-settings-general/src/client/shell-contract.ts`
-  - Document active host viewing state and host filter injected data.
-- `packages/client/ui-settings-general/src/client/SettingsRoot.tsx` tests or nearby specs
-  - Update expectations for the settings header and Host filter.
-- `packages/host/apiproxy/README.md` and API proxy specs
-  - Document and test host-routed settings calls.
+The upstream `deepseek-harness` Settings shell remains the source copied by `dsh-remote-desktop`; no `deepseek-harness` source docs are changed by this route.
 
 ## New specs and tests to add
 
@@ -313,17 +305,7 @@ Add these `dsh-remote-desktop` specs/tests:
   - Does not fall back to local settings on remote errors.
   - Preserves per-host origin/token isolation.
 
-Add these `deepseek-harness` specs/tests for Stage 2:
-
-- `packages/client/ui-settings-general/tests/host-filter.spec.tsx`
-  - Renders host entries from a provider.
-  - Stores selected host as viewing state.
-  - Shows not-connected placeholder for disconnected remote hosts.
-- `packages/host/apiproxy/tests/settings-host-routing.spec.ts`
-  - Routes settings API calls by selected host.
-  - Rejects or reports unavailable remote hosts without falling back to local settings.
-- `packages/client/ui-settings/tests/settings-host-context.spec.ts`
-  - Exposes active host context to settings sections through the chosen seam.
+Do not add `deepseek-harness` tests for this plugin-owned route; `dsh-remote-desktop` acceptance owns the copied shell behavior.
 
 Update acceptance scripts rather than adding a parallel acceptance suite. P0 remains the single-host gate, and P1/P2 remains the multi-host/settings gate.
 
@@ -341,22 +323,23 @@ Primary repo: `dsh-remote-desktop`.
 
 Stage 1 proves the main UX change: remote workspaces are projects with host badges, not source-machine groups.
 
-### Stage 2: host-scoped settings
+### Stage 2: copied settings shell and host-scoped routing
 
-Repos: `deepseek-harness` and `dsh-remote-desktop`.
+Repo: `dsh-remote-desktop`.
 
-- Add the settings Host filter seam in `deepseek-harness`.
-- Add host-aware settings API routing.
-- Let `dsh-remote-desktop` provide host entries and remote settings proxy routing.
-- Hide the Remote Desktop management page for remote settings contexts.
+- Disable upstream `ui-settings-general` in the plugin patch.
+- Register a copied Settings shell that declares and renders `settings.section` entries.
+- Render the global Host filter inside the copied shell header.
+- Route `/api/*` settings-page calls through `/remote-desktop/api/host-api` for the selected connected remote host.
+- Hide the Remote Desktop management list for remote settings contexts and show a remote-host placeholder/connect action.
 - Update P1/P2 acceptance for multi-host settings behavior.
 
-Stage 2 delivers the full Codex-style settings behavior selected for this design.
+Stage 2 delivers the Codex-style settings behavior without modifying `deepseek-harness`; the copied shell is a deliberate fork that must be rebased over upstream Settings shell changes.
 
 ## Open decisions resolved
 
 - Same-name workspaces are not merged.
 - Sidebar is not grouped by source machine.
-- Settings uses the global Host filter approach, not an internal Remote Desktop page selector.
+- Settings uses the global Host filter approach in a `dsh-remote-desktop`-owned copied Settings shell, not an internal Remote Desktop page selector.
 - SSH host discovery reads `~/.ssh/config` directly.
 - Remote Desktop management is main-host-only and simple.

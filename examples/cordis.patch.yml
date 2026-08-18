@@ -5,6 +5,9 @@
 - id: ui-workspace
   disabled: true
 
+- id: ui-settings-general
+  disabled: true
+
 - insert:
     - id: remote-desktop
       name: dsh-remote-desktop
