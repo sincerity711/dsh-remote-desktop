@@ -11,6 +11,8 @@ const requiredClientNeedles = [
   'data-rd-sidebar\': \'official-style-fork\'',
   'var(--dsw-specific-sidebar-fill)',
   'var(--dsw-alias-interactive-bg-hover)',
+  "position: 'fixed'",
+  '2147483000',
   'data-rd-local-session-id',
   'data-rd-remote-session-id',
 ]

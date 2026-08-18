@@ -493,7 +493,7 @@ window.__ModuleLoader__.load({
     const styles = {
       hint: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, padding: '6px 8px' },
       error: { color: 'var(--dsw-alias-state-error-primary)', fontSize: 12, padding: '6px 8px', whiteSpace: 'pre-wrap' },
-      overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 2147482000, background: 'var(--dsw-alias-bg-base, #fff)', pointerEvents: 'auto' },
+      overlay: { position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 2147483000, isolation: 'isolate', background: 'var(--dsw-alias-bg-base, #fff)', pointerEvents: 'auto' },
       iframe: { width: '100%', height: '100%', border: 0, background: 'white' },
       badge: { position: 'absolute', top: 8, right: 12, zIndex: 2, padding: '4px 8px', borderRadius: 999, background: 'rgba(0,0,0,.55)', color: 'white', fontSize: 12 },
       settings: { padding: 16, maxWidth: 720, font: '14px system-ui, sans-serif' },
