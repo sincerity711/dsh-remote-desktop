@@ -240,6 +240,25 @@ async function runBrowserChecks() {
       if (origin === localBase) throw new Error(`origin equals local ${origin}`)
       return `${origin} != ${localBase}`
     })
+    await item('P0-IFRAME-005', 'remote overlay covers local body portals', async () => {
+      const result = await page.evaluate(() => {
+        const host = document.querySelector('[data-rd-overlay-host="body-portal"]')
+        const overlay = document.querySelector('[data-rd-overlay-active="true"]')
+        if (!(host instanceof HTMLElement) || !(overlay instanceof HTMLElement)) return { ok: false, reason: 'overlay host or active overlay missing' }
+        const style = getComputedStyle(overlay)
+        const rect = overlay.getBoundingClientRect()
+        const probe = document.elementFromPoint(window.innerWidth - 24, Math.min(120, window.innerHeight - 24))
+        const probeCovered = probe === overlay || overlay.contains(probe)
+        if (host.parentElement !== document.body) return { ok: false, reason: 'overlay host is not a direct body portal' }
+        if (style.position !== 'fixed') return { ok: false, reason: `overlay position is ${style.position}` }
+        if (Number(style.zIndex) < 2147483000) return { ok: false, reason: `overlay z-index is ${style.zIndex}` }
+        if (rect.left <= 0 || rect.right < window.innerWidth - 1 || rect.bottom < window.innerHeight - 1) return { ok: false, reason: `bad overlay rect ${JSON.stringify({ left: rect.left, right: rect.right, bottom: rect.bottom })}` }
+        if (!probeCovered) return { ok: false, reason: `right-side probe hit ${probe?.tagName ?? 'nothing'} outside overlay` }
+        return { ok: true, reason: `${style.position} z=${style.zIndex} body portal covers right-side probe` }
+      })
+      if (!result.ok) throw new Error(result.reason)
+      return result.reason
+    })
     await item('P0-SWITCH-002', 'remote open command', async () => {
       const result = await page.evaluate(async ({ token, sessionId, origin }) => {
         const frame = [...document.querySelectorAll('iframe')].find(f => f.src.includes('dshRemoteDesktop=1'))

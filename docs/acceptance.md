@@ -110,16 +110,17 @@ The script must drive a real browser through Playwright or an equivalent browser
 8. Assert the iframe origin differs from the local dsh origin.
 9. Assert the companion returns a `dsh-remote-desktop/opened` message for the clicked session id.
 10. Assert iframe `body[data-dsh-remote-desktop-child="true"]` exists.
-11. Assert the remote iframe's own left sidebar is hidden while the top-level local sidebar remains visible.
-12. Assert a remote chat/composer or onboarding main area is visible in the iframe.
-13. Assert `dsh-better-sidebar` is mounted inside the iframe.
-14. Assert the remote Better Sidebar file path can see `remote-only.txt`.
-15. Assert the remote Better Sidebar terminal can run `cat /tmp/dsh-remote-desktop-sentinel/remote-only.txt` and returns `REMOTE_SENTINEL_WIN_WSL`.
-16. Click a local session row in the top-level sidebar.
-17. Assert the remote iframe is hidden or non-interactive.
-18. Assert the local main area is visible again.
-19. Assert the local UI does not show `REMOTE_SENTINEL_WIN_WSL` or `remote-only.txt` as local content.
-20. Repeat local → remote → local → remote once more to catch stuck overlay or stale active-source state.
+11. Assert the remote overlay is a fixed body portal above local body-level portals.
+12. Assert the remote iframe's own left sidebar is hidden while the top-level local sidebar remains visible.
+13. Assert a remote chat/composer or onboarding main area is visible in the iframe.
+14. Assert `dsh-better-sidebar` is mounted inside the iframe.
+15. Assert the remote Better Sidebar file path can see `remote-only.txt`.
+16. Assert the remote Better Sidebar terminal can run `cat /tmp/dsh-remote-desktop-sentinel/remote-only.txt` and returns `REMOTE_SENTINEL_WIN_WSL`.
+17. Click a local session row in the top-level sidebar.
+18. Assert the remote iframe is hidden or non-interactive.
+19. Assert the local main area is visible again.
+20. Assert the local UI does not show `REMOTE_SENTINEL_WIN_WSL` or `remote-only.txt` as local content.
+21. Repeat local → remote → local → remote once more to catch stuck overlay or stale active-source state.
 
 ### P0 artifacts
 
@@ -205,6 +206,9 @@ A failing run must exit non-zero and include the failing item id in stdout.
 
 - **P0-IFRAME-001 remote origin**
   PASS: the remote iframe origin differs from the local dsh origin.
+
+- **P0-IFRAME-005 remote overlay covers local body portals**
+  PASS: the active remote overlay is portalled directly under `document.body`, uses fixed positioning and a top z-index, and covers a right-side viewport probe so local body-level side panels cannot remain above it.
 
 - **P0-IFRAME-002 companion marker**
   PASS: the iframe body has `data-dsh-remote-desktop-child="true"`.

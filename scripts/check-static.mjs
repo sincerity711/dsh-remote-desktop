@@ -13,6 +13,8 @@ const requiredClientNeedles = [
   'var(--dsw-alias-interactive-bg-hover)',
   "position: 'fixed'",
   '2147483000',
+  'ReactDOM.createPortal',
+  'data-rd-overlay-host',
   'data-rd-local-session-id',
   'data-rd-remote-session-id',
 ]
