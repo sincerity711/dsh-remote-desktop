@@ -11,6 +11,29 @@ window.__ModuleLoader__.load({
 
     const LOCAL_SOURCE_ID = 'local'
     const ACTIVE_CHANGED = 'dsh-remote-desktop/active-changed'
+    let settingsHostId = 'local'
+    let fetchPatched = false
+
+    function setSettingsHost(id) {
+      settingsHostId = id || 'local'
+      window.__dshRemoteDesktopSettingsHost = settingsHostId
+    }
+
+    function installHostApiFetchPatch() {
+      if (fetchPatched) return
+      fetchPatched = true
+      const originalFetch = window.fetch.bind(window)
+      window.fetch = (input, init) => {
+        if (settingsHostId === 'local') return originalFetch(input, init)
+        const url = new URL(typeof input === 'string' ? input : input.url, window.location.origin)
+        if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return originalFetch(input, init)
+        const next = new URL('/remote-desktop/api/host-api', window.location.origin)
+        next.searchParams.set('id', settingsHostId)
+        next.searchParams.set('path', `${url.pathname}${url.search}`)
+        if (typeof input === 'string') return originalFetch(String(next), init)
+        return originalFetch(new Request(String(next), input), init)
+      }
+    }
 
     function createStore() {
       let snapshot = {
@@ -422,7 +445,7 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = useState(false)
       useEffect(() => { void store.refreshSources() }, [])
       const active = activeHostId === 'local' ? { id: 'local', label: 'All settings', state: 'connected' } : sources.find(source => source.id === activeHostId)
-      const select = (id) => { setActiveHostId(id); setOpen(false) }
+      const select = (id) => { setSettingsHost(id); setActiveHostId(id); setOpen(false) }
       return h('div', { style: styles.hostFilter, 'data-rd-settings-host-filter': 'true' },
         h('button', { type: 'button', style: styles.hostFilterButton, onClick: () => setOpen(value => !value), 'data-rd-settings-host-filter-button': 'true' },
           h('span', null, active?.label ?? activeHostId),
@@ -491,6 +514,7 @@ window.__ModuleLoader__.load({
 
     exports.apply = function apply(ctx) {
       if (new URLSearchParams(window.location.search).get('dshRemoteDesktop') === '1') return
+      installHostApiFetchPatch()
       const openLocal = (sessionId) => ctx.sessions.open(sessionId)
       if (typeof ctx.provide === 'function') ctx.provide('remoteDesktop', createService(openLocal))
       else window.__dshRemoteDesktop = createService(openLocal)

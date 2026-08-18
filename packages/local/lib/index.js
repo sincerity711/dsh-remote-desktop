@@ -258,6 +258,35 @@ async function proxyUpgrade(req, socket, head, targetPort) {
   })
 }
 
+
+async function proxyHostApi(req, res, source) {
+  const runtime = runtimesForProxy.get(source.id)
+  if (runtime?.state !== 'connected' || runtime.tunnelPort === undefined) throw new Error('source is not connected')
+  const url = new URL(req.url ?? '/', 'http://local')
+  const path = url.searchParams.get('path') ?? '/'
+  if (!path.startsWith('/api/')) throw new Error('host API path must start with /api/')
+  const headers = { ...req.headers }
+  delete headers.host
+  if (headers.origin !== undefined) headers.origin = `http://127.0.0.1:${runtime.tunnelPort}`
+  const upstream = httpRequest({
+    host: '127.0.0.1',
+    port: runtime.tunnelPort,
+    method: req.method,
+    path,
+    headers: { ...headers, host: `127.0.0.1:${runtime.tunnelPort}` },
+  }, (upstreamRes) => {
+    res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers)
+    upstreamRes.pipe(res)
+  })
+  upstream.on('error', (error) => {
+    if (!res.headersSent) writeError(res, 502, 'proxy_failed', error.message)
+    else res.destroy(error)
+  })
+  req.pipe(upstream)
+}
+
+let runtimesForProxy
+
 async function rpc(port, method, payload = {}) {
   const rpcId = randomUUID()
   const response = await fetch(`http://127.0.0.1:${port}/api/${method}`, {
@@ -276,6 +305,7 @@ async function rpc(port, method, payload = {}) {
 export async function apply(ctx) {
   let sources = await loadSources()
   const runtimes = new Map()
+  runtimesForProxy = runtimes
 
   async function persist(next) {
     await saveSources(next)
@@ -358,6 +388,15 @@ export async function apply(ctx) {
       const pathname = new URL(req.url ?? '/', 'http://local').pathname
       const suffix = pathname.slice(API_PREFIX.length) || '/'
       try {
+        if (suffix === '/host-api') {
+          const url = new URL(req.url ?? '/', 'http://local')
+          const id = url.searchParams.get('id') ?? ''
+          sources = await loadSources()
+          const source = sources.find(item => item.id === id)
+          if (source === undefined) throw new Error(`unknown source ${id}`)
+          await proxyHostApi(req, res, source)
+          return
+        }
         if (req.method === 'GET' && suffix === '/sources') {
           sources = await loadSources()
           writeJson(res, 200, { ok: true, sources: sources.map(source => publicSource(source, runtimes.get(source.id))) })

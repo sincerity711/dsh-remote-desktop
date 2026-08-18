@@ -169,10 +169,22 @@ async function settingsUiChecks(page) {
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator(`[data-rd-settings-host-option="${remotes[1].id}"]`).click()
     await page.locator(`[data-rd-settings-remote-host-placeholder="${remotes[1].id}"]`).waitFor({ timeout: 10000 })
+    const routed = await page.evaluate(async ({ remoteSessionId, localSessionId }) => {
+      const rpcId = crypto.randomUUID()
+      const res = await fetch('/api/session.list', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'client-request', rpcId, method: 'session.list', payload: {} }),
+      })
+      const json = await res.json()
+      const ids = json.result?.value?.items?.map(item => item.sessionId) ?? []
+      return { hasRemote: ids.includes(remoteSessionId), hasLocal: ids.includes(localSessionId), ids }
+    }, { remoteSessionId: remotes[1].sessionId, localSessionId })
+    if (!routed.hasRemote || routed.hasLocal) throw new Error(`Host filter did not route API to remote: ${JSON.stringify(routed)}`)
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator('[data-rd-settings-host-option="local"]').click()
     await page.locator('[data-rd-settings-remote-host-placeholder]').waitFor({ state: 'detached', timeout: 10000 })
-    return 'Host filter switched to a remote settings context and back to local'
+    return 'Host filter switched context and routed host API to the selected remote'
   })
   await item('P1-SETTINGS-001', 'ssh config hosts listed in UI', async () => {
     for (const remote of remotes) await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).waitFor({ timeout: 10000 })

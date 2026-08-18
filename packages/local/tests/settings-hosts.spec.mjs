@@ -11,6 +11,8 @@ test('settings page lists ssh hosts as connection targets', async () => {
   assert.match(client, /settings\.hostFilter/)
   assert.match(client, /data-rd-settings-host-filter/)
   assert.match(client, /data-rd-settings-remote-host-placeholder/)
+  assert.match(client, /installHostApiFetchPatch/)
+  assert.match(client, /\/remote-desktop\/api\/host-api/)
   assert.match(client, /not connected/)
   assert.doesNotMatch(client, /Save source/)
   assert.doesNotMatch(client, /data-rd-settings-save/)
