@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
     const module = { exports: {} }
     const exports = module.exports
     const React = require('react')
+    const ReactDOM = require('react-dom')
     const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 
     exports.inject = ['slots', 'sessions', 'workspaces']
@@ -367,12 +368,20 @@ window.__ModuleLoader__.load({
     function RemoteOverlay() {
       const remote = useRemote(s => s)
       const { sources, active, pendingOpen } = remote
+      const [host, setHost] = useState(null)
       const [left, setLeftState] = useState(0)
       const leftRef = useRef(0)
       const setLeft = (next) => { if (leftRef.current !== next) { leftRef.current = next; setLeftState(next) } }
       const frames = useRef(new Map())
       const tokenToSource = useMemo(() => new Map(sources.map(source => [source.token, source.id])), [sources])
       const source = active.kind === 'remote' ? sources.find(s => s.id === active.sourceId) : undefined
+      useEffect(() => {
+        const node = document.createElement('div')
+        node.setAttribute('data-rd-overlay-host', 'body-portal')
+        document.body.appendChild(node)
+        setHost(node)
+        return () => { node.remove(); setHost(null) }
+      }, [])
       useEffect(() => {
         const measure = () => {
           const col = document.querySelector('[class*="sidebarCol"]')
@@ -406,7 +415,7 @@ window.__ModuleLoader__.load({
         return () => clearTimeout(retry)
       }, [source?.id, source?.iframeUrl, source?.token, pendingOpen?.nonce])
 
-      return h('div', { style: { ...styles.overlay, left, display: source ? 'block' : 'none' }, 'data-rd-overlay-active': source ? 'true' : 'false' },
+      const overlay = h('div', { style: { ...styles.overlay, left, display: source ? 'block' : 'none' }, 'data-rd-overlay-active': source ? 'true' : 'false' },
         sources.filter(s => s.state === 'connected' && s.iframeUrl).map(s => h('iframe', {
           key: s.id,
           ref: el => { if (el) frames.current.set(s.id, el); else frames.current.delete(s.id) },
@@ -416,6 +425,7 @@ window.__ModuleLoader__.load({
           title: `Remote dsh ${s.label}`,
         })),
       )
+      return host ? ReactDOM.createPortal(overlay, host) : null
     }
 
     function withParent(url) {
