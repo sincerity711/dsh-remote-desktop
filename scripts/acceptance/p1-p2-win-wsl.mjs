@@ -165,6 +165,15 @@ async function settingsUiChecks(page) {
   await page.waitForTimeout(1000)
   await clickButtonContaining(page, 'Remote Desktop').catch(() => {})
   await page.locator('[data-rd-settings-section="true"]').waitFor({ timeout: 10000 })
+  await item('P1-SETTINGS-000', 'global Host filter switches settings context', async () => {
+    await page.locator('[data-rd-settings-host-filter-button="true"]').click()
+    await page.locator(`[data-rd-settings-host-option="${remotes[1].id}"]`).click()
+    await page.locator(`[data-rd-settings-remote-host-placeholder="${remotes[1].id}"]`).waitFor({ timeout: 10000 })
+    await page.locator('[data-rd-settings-host-filter-button="true"]').click()
+    await page.locator('[data-rd-settings-host-option="local"]').click()
+    await page.locator('[data-rd-settings-remote-host-placeholder]').waitFor({ state: 'detached', timeout: 10000 })
+    return 'Host filter switched to a remote settings context and back to local'
+  })
   await item('P1-SETTINGS-001', 'ssh config hosts listed in UI', async () => {
     for (const remote of remotes) await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).waitFor({ timeout: 10000 })
     return 'all ssh config hosts appeared in Remote Desktop settings'
@@ -179,8 +188,7 @@ async function settingsUiChecks(page) {
   await item('P1-SETTINGS-003', 'disconnect host from UI', async () => {
     await page.locator(`[data-rd-settings-disconnect="${remotes[1].id}"]`).click()
     await waitForSourceState(remotes[1].id, 'disconnected')
-    const text = await page.locator(`[data-rd-settings-source-id="${remotes[1].id}"]`).innerText()
-    if (!text.includes('not connected')) throw new Error(`${remotes[1].id} not-connected text missing: ${text}`)
+    await page.locator(`[data-rd-settings-source-id="${remotes[1].id}"] [data-rd-settings-host-state="disconnected"]`).waitFor({ timeout: 10000 })
     return `${remotes[1].id} disconnected from UI`
   })
   await item('P1-SETTINGS-004', 'connect host from UI', async () => {

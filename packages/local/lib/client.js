@@ -417,7 +417,29 @@ window.__ModuleLoader__.load({
       return String(u)
     }
 
-    function SettingsSection() {
+    function SettingsHostFilter({ activeHostId, setActiveHostId }) {
+      const sources = useRemote(s => s.sources)
+      const [open, setOpen] = useState(false)
+      useEffect(() => { void store.refreshSources() }, [])
+      const active = activeHostId === 'local' ? { id: 'local', label: 'All settings', state: 'connected' } : sources.find(source => source.id === activeHostId)
+      const select = (id) => { setActiveHostId(id); setOpen(false) }
+      return h('div', { style: styles.hostFilter, 'data-rd-settings-host-filter': 'true' },
+        h('button', { type: 'button', style: styles.hostFilterButton, onClick: () => setOpen(value => !value), 'data-rd-settings-host-filter-button': 'true' },
+          h('span', null, active?.label ?? activeHostId),
+          activeHostId !== 'local' && h('span', { className: `rd-stateDot rd-state-${active?.state ?? 'disconnected'}` }),
+          h('span', null, '⌄')
+        ),
+        open && h('div', { style: styles.hostFilterMenu, 'data-rd-settings-host-filter-menu': 'true' },
+          h('button', { type: 'button', style: styles.hostFilterItem, onClick: () => select('local'), 'data-rd-settings-host-option': 'local' }, 'All settings'),
+          sources.map(source => h('button', { key: source.id, type: 'button', style: styles.hostFilterItem, onClick: () => select(source.id), 'data-rd-settings-host-option': source.id },
+            h('span', null, source.label),
+            h('span', { className: `rd-stateDot rd-state-${source.state}` })
+          ))
+        )
+      )
+    }
+
+    function SettingsSection({ activeHostId = 'local' }) {
       const sources = useRemote(s => s.sources)
       const [message, setMessage] = useState('')
       useEffect(() => { void store.refreshSources() }, [])
@@ -426,6 +448,14 @@ window.__ModuleLoader__.load({
       }
       const disconnect = async (id) => {
         try { await store.disconnect(id); setMessage('Disconnected') } catch (e) { setMessage(e.message || String(e)) }
+      }
+      if (activeHostId !== 'local') {
+        const active = sources.find(source => source.id === activeHostId)
+        return h('div', { style: styles.settings, 'data-rd-settings-section': 'true', 'data-rd-settings-remote-host-placeholder': activeHostId },
+          h('h2', null, active?.label ?? activeHostId),
+          h('p', null, active?.state === 'connected' ? 'This remote host is selected in the global Host filter.' : 'This remote host is not connected.'),
+          active?.state !== 'connected' && h('button', { 'data-rd-settings-connect': activeHostId, onClick: () => void connect(activeHostId) }, 'Connect')
+        )
       }
       return h('div', { style: styles.settings, 'data-rd-settings-section': 'true' },
         h('h2', null, 'Remote Desktop'),
@@ -473,6 +503,9 @@ window.__ModuleLoader__.load({
         id: 'remote-desktop-overlay',
         order: 100,
       }, RemoteOverlay))
+      ctx.slots.inject('settings.hostFilter', () => ctx.slots.register({
+        name: 'settings.hostFilter',
+      }, SettingsHostFilter))
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section',
         id: 'remote-desktop',
@@ -494,6 +527,10 @@ window.__ModuleLoader__.load({
       actions: { display: 'flex', gap: 8, marginTop: 8 },
       hostRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
       hostStatus: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12 },
+      hostFilter: { position: 'relative', display: 'inline-flex' },
+      hostFilterButton: { display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 10px', borderRadius: 10, border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.35))', background: 'var(--dsw-alias-bg-layer-2, #fff)', color: 'inherit' },
+      hostFilterMenu: { position: 'absolute', top: 36, right: 0, minWidth: 180, zIndex: 2, display: 'flex', flexDirection: 'column', gap: 2, padding: 6, borderRadius: 12, background: 'var(--dsw-alias-bg-layer-2, #fff)', boxShadow: 'var(--dsw-shadow-lv3, 0 8px 24px rgba(0,0,0,.18))' },
+      hostFilterItem: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 8px', border: 0, borderRadius: 8, background: 'transparent', color: 'inherit', textAlign: 'left' },
     }
 
     return module.exports

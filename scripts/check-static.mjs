@@ -19,6 +19,8 @@ const requiredClientNeedles = [
   'data-rd-remote-session-id',
   'data-rd-host-badge',
   'data-rd-workspace-source-kind',
+  'settings.hostFilter',
+  'data-rd-settings-host-filter',
 ]
 for (const needle of requiredClientNeedles) {
   if (!localClient.includes(needle)) throw new Error(`packages/local/lib/client.js missing ${needle}`)
