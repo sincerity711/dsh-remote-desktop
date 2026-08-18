@@ -387,10 +387,35 @@ window.__ModuleLoader__.load({
           const col = document.querySelector('[class*="sidebarCol"]')
           setLeft(col ? Math.round(col.getBoundingClientRect().right) : 0)
         }
-        measure()
+        const observed = new Set()
         const ro = new ResizeObserver(measure)
-        ro.observe(document.body)
-        return () => ro.disconnect()
+        const observe = (element) => {
+          if (!(element instanceof Element) || observed.has(element)) return
+          observed.add(element)
+          ro.observe(element)
+        }
+        const refreshObserved = () => {
+          observe(document.body)
+          observe(document.documentElement)
+          observe(document.querySelector('[class*="sidebarCol"]'))
+          observe(document.querySelector('[class*="frame"]'))
+        }
+        measure()
+        refreshObserved()
+        const mo = new MutationObserver(() => { refreshObserved(); measure() })
+        mo.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style'] })
+        window.addEventListener('resize', measure)
+        document.addEventListener('pointermove', measure, true)
+        document.addEventListener('pointerup', measure, true)
+        const timer = window.setInterval(measure, 250)
+        return () => {
+          window.clearInterval(timer)
+          document.removeEventListener('pointermove', measure, true)
+          document.removeEventListener('pointerup', measure, true)
+          window.removeEventListener('resize', measure)
+          mo.disconnect()
+          ro.disconnect()
+        }
       }, [])
       useEffect(() => {
         const onMessage = (event) => {

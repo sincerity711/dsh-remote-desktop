@@ -259,6 +259,28 @@ async function runBrowserChecks() {
       if (!result.ok) throw new Error(result.reason)
       return result.reason
     })
+    await item('P0-IFRAME-007', 'remote overlay follows sidebar resize', async () => {
+      const read = async () => page.evaluate(() => {
+        const sidebar = document.querySelector('[class*="sidebarCol"]')
+        const overlay = document.querySelector('[data-rd-overlay-active="true"]')
+        if (!(sidebar instanceof HTMLElement) || !(overlay instanceof HTMLElement)) return { ok: false, reason: 'sidebar or overlay missing' }
+        return { ok: true, sidebarRight: sidebar.getBoundingClientRect().right, overlayLeft: overlay.getBoundingClientRect().left }
+      })
+      const before = await read()
+      if (!before.ok) throw new Error(before.reason)
+      const handle = await page.locator('[data-side="sidebar"]').first().boundingBox()
+      if (handle === null) throw new Error('sidebar resize handle missing')
+      await page.mouse.move(handle.x + 2, handle.y + handle.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(handle.x + 44, handle.y + handle.height / 2, { steps: 8 })
+      await page.mouse.up()
+      await page.waitForTimeout(1000)
+      const after = await read()
+      if (!after.ok) throw new Error(after.reason)
+      if (Math.abs(after.sidebarRight - before.sidebarRight) < 12) throw new Error(`sidebar did not resize: before=${before.sidebarRight}, after=${after.sidebarRight}`)
+      if (Math.abs(after.overlayLeft - after.sidebarRight) > 3) throw new Error(`overlay left ${after.overlayLeft} did not follow sidebar right ${after.sidebarRight}`)
+      return `overlay left followed sidebar right from ${Math.round(before.overlayLeft)} to ${Math.round(after.overlayLeft)}`
+    })
     await item('P0-SWITCH-002', 'remote open command', async () => {
       const result = await page.evaluate(async ({ token, sessionId, origin }) => {
         const frame = [...document.querySelectorAll('iframe')].find(f => f.src.includes('dshRemoteDesktop=1'))

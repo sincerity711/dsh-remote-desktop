@@ -213,6 +213,9 @@ A failing run must exit non-zero and include the failing item id in stdout.
 - **P0-IFRAME-006 companion CSS targets only dsh app frame**
   PASS: companion CSS keeps the hidden `sidebarCol` mounted as a zero-width grid item and rewrites only the DSH app frame that directly contains `sidebarCol`; it must not rewrite every class containing `frame`, because that breaks remote plugins such as Better Sidebar right/bottom panels.
 
+- **P0-IFRAME-007 remote overlay follows sidebar resize**
+  PASS: after dragging the local sidebar splitter, the active remote overlay left edge follows the sidebar right edge, so the remote iframe resizes with the main interaction area.
+
 - **P0-IFRAME-002 companion marker**
   PASS: the iframe body has `data-dsh-remote-desktop-child="true"`.
 
