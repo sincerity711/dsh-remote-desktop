@@ -591,6 +591,7 @@ window.__ModuleLoader__.load({
       else window.__dshRemoteDesktop = createService(openLocal)
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({
         name: 'sidebar.workspaces',
+        priority: -10,
         inject: () => ({ openLocal }),
       }, RemoteWorkspaceBrowser))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({

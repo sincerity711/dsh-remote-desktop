@@ -1,8 +1,5 @@
 # dsh-remote-desktop local bundle.
-# It replaces the stock workspace browser region with a multi-source browser.
-- id: ui-workspace
-  disabled: true
-
+# It shadows the stock workspace browser region with a multi-source browser.
 - id: ui-settings-general
   disabled: true
 
