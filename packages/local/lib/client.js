@@ -5,6 +5,10 @@ window.__ModuleLoader__.load({
     const exports = module.exports
     const React = require('react')
     const ReactDOM = require('react-dom')
+    const {
+      Button, IconChevronDownOutline14, IconFolderClose16, IconFolderOpenOutline16,
+      IconPlusOutline16, Input, Menu, Modal,
+    } = require('@deepseek-ai/dsh-client-ui-primitives')
     const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 
     exports.inject = ['slots', 'sessions', 'workspaces']
@@ -48,6 +52,7 @@ window.__ModuleLoader__.load({
         loaded: false,
         error: null,
         companionReady: {},
+        remoteSetup: { open: false, request: null },
       }
       const listeners = new Set()
       const emit = () => {
@@ -121,12 +126,40 @@ window.__ModuleLoader__.load({
           })
         },
         openLocal(sessionId) { set({ active: { kind: 'local', sessionId }, pendingOpen: null }) },
+        openRemoteSetup(request = null) { set({ remoteSetup: { open: true, request } }) },
+        closeRemoteSetup(status = 'cancelled', message = '') {
+          const request = snapshot.remoteSetup.request
+          if (request?.target && request?.origin && request?.requestId) {
+            request.target.postMessage({
+              type: 'dsh-remote-desktop/add-workspace-remote-result',
+              requestId: request.requestId,
+              status,
+              ...(message ? { message } : {}),
+            }, request.origin)
+          }
+          set({ remoteSetup: { open: false, request: null } })
+        },
         listSources() { return snapshot.sources.map(publicSummary) },
       }
     }
 
     const store = createStore()
     const useRemote = (selector) => useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
+
+    function isRemoteDesktopIframe() {
+      return new URLSearchParams(window.location.search).get('dshRemoteDesktop') === '1'
+    }
+
+    function bridgeHash() {
+      const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+      return { token: params.get('token') || '', parent: params.get('parent') || '' }
+    }
+
+    function isAddWorkspaceBridgeRequest(data) {
+      return data?.type === 'dsh-remote-desktop/add-workspace-remote-request'
+        && typeof data.requestId === 'string' && data.requestId !== ''
+        && typeof data.token === 'string' && data.token !== ''
+    }
 
     async function remoteRpc(sourceId, method, payload = {}) {
       const rpcId = `${Date.now()}-${Math.random()}`
@@ -262,27 +295,28 @@ window.__ModuleLoader__.load({
         .rd-settingsClose { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 28px; background: transparent; cursor: pointer; color: inherit; font-size: 18px; }
         .rd-settingsClose:hover { background: var(--dsw-alias-interactive-bg-hover); }
         .rd-settingsOptions { flex: 1; min-height: 0; padding: 0 24px 24px; overflow-y: auto; }
-        .rd-pickerMenu { position: fixed; z-index: 2147482600; min-width: 260px; max-width: min(360px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2, #fff); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3, 0 8px 24px rgba(0,0,0,.18)); }
-        .rd-pickerItem { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 8px; box-sizing: border-box; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-        .rd-pickerItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
-        .rd-pickerItem[disabled] { opacity: .55; cursor: default; }
-        .rd-pickerTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .rd-pickerMeta { flex: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
-        .rd-pickerDivider { height: 1px; margin: 6px 4px; background: var(--dsw-alias-border-l3, rgba(128,128,128,.22)); }
-        .rd-addDialog { position: fixed; inset: 0; z-index: 2147482700; display: flex; align-items: center; justify-content: center; }
-        .rd-addMask { position: absolute; inset: 0; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,.24)); }
-        .rd-addPanel { position: relative; z-index: 1; width: min(460px, calc(100vw - 32px)); padding: 18px; border-radius: 18px; background: var(--dsw-alias-bg-layer-2, #fff); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3, 0 10px 40px rgba(0,0,0,.18)); }
-        .rd-addTitle { margin: 0 0 12px; font-size: 16px; line-height: 24px; font-weight: 520; }
-        .rd-addLabel { display: block; margin: 10px 0; font-size: 12px; color: var(--dsw-alias-label-secondary); }
-        .rd-addInput { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.35)); background: transparent; color: inherit; font: inherit; }
-        .rd-addActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-        .rd-addError { color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px; white-space: pre-wrap; }
+        .rd-pickerMenu { position: fixed; z-index: 2147482600; min-width: 260px; max-width: min(360px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); }
+        .rd-addChoiceGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .rd-addChoice { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 92px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
+        .rd-addChoice:hover { background: var(--dsw-alias-interactive-bg-hover); }
+        .rd-addChoice[disabled] { opacity: .55; cursor: default; }
+        .rd-addChoiceIcon { flex: none; color: var(--dsw-alias-label-secondary); }
+        .rd-addChoiceTitle { display: block; font-size: 14px; line-height: 20px; font-weight: 520; }
+        .rd-addChoiceDesc { display: block; margin-top: 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+        .rd-setupField { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+        .rd-setupLabel { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+        .rd-hostButton { justify-content: space-between; width: 100%; }
+        .rd-hostButtonLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+        .rd-setupHint { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; margin-top: 8px; }
+        .rd-addError { color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px; white-space: pre-wrap; margin-top: 8px; }
         @keyframes rd-row-in { from { opacity: 0; } }
         @media (prefers-reduced-motion: reduce) { .rd-sessionRow { animation: none; } }
       `
       document.head.appendChild(style)
       return () => style.remove()
     }
+
+    function DirectoryFlowAnchor() { return null }
 
     function RemoteWorkspaceBrowser(props) {
       const remote = useRemote(s => s)
@@ -414,109 +448,236 @@ window.__ModuleLoader__.load({
       return ''
     }
 
-    function RemoteWorkspacePicker(props) {
+    function WorkspaceAddSplitter(props) {
       const remote = useRemote(s => s)
       const localWorkspaces = props.useWorkspaces(s => s.items)
-      const [addOpen, setAddOpen] = useState(false)
-      const [error, setError] = useState('')
+      const [splitterOpen, setSplitterOpen] = useState(false)
+      const [localFlowOpen, setLocalFlowOpen] = useState(false)
+      const [localBusy, setLocalBusy] = useState(false)
+      const [message, setMessage] = useState('')
       const anchorRect = props.anchorRef?.current?.getBoundingClientRect?.()
-      useEffect(() => { void store.refreshSources() }, [])
-      const close = () => { setError(''); props.onClose?.() }
+      const flowAvailable = props.useDirectoryFlow ? props.useDirectoryFlow(Boolean) : false
+      useEffect(() => { if (!isRemoteDesktopIframe()) void store.refreshSources() }, [])
+      const closePicker = () => { setMessage(''); props.onClose?.() }
       const remoteWorkspaceRows = []
-      for (const source of remote.sources) {
-        if (source.state !== 'connected') continue
-        const snap = remote.snapshots[source.id]
-        for (const ws of byWorkspace(snap)) remoteWorkspaceRows.push({ source, workspace: ws })
+      if (!isRemoteDesktopIframe()) {
+        for (const source of remote.sources) {
+          if (source.state !== 'connected') continue
+          const snap = remote.snapshots[source.id]
+          for (const ws of byWorkspace(snap)) remoteWorkspaceRows.push({ source, workspace: ws })
+        }
       }
+      const menuItems = [
+        ...localWorkspaces.map(ws => ({
+          id: `local:${ws.workspaceId}`,
+          label: ws.title || ws.path || 'Workspace',
+          icon: h(IconFolderClose16, { size: 16 }),
+        })),
+        ...(remoteWorkspaceRows.length > 0 ? [{ type: 'separator', id: 'remote-separator' }] : []),
+        ...remoteWorkspaceRows.map(({ source, workspace }) => ({
+          id: `remote:${source.id}:${workspace.workspaceId}`,
+          label: h('span', { className: 'rd-hostButtonLabel' }, workspace.title || workspace.path || 'Workspace'),
+          icon: h(IconFolderClose16, { size: 16 }),
+        })),
+      ]
+      const footerItems = [{ id: 'add-workspace', label: 'Add workspace…', icon: h(IconPlusOutline16, { size: 16 }) }]
       const openRemoteWorkspace = async (sourceId, workspaceId) => {
-        setError('')
-        close()
-        try { await startRemoteWorkspace(sourceId, workspaceId) } catch (e) { setError(e.message || String(e)) }
+        setMessage('')
+        closePicker()
+        try { await startRemoteWorkspace(sourceId, workspaceId) } catch (e) { setMessage(e.message || String(e)) }
+      }
+      const handleMenuSelect = (id) => {
+        if (id === 'add-workspace') {
+          props.onClose?.()
+          setSplitterOpen(true)
+          return
+        }
+        if (id.startsWith('local:')) {
+          closePicker()
+          props.onPick(id.slice('local:'.length))
+          return
+        }
+        if (id.startsWith('remote:')) {
+          const [, sourceId, workspaceId] = id.split(':')
+          void openRemoteWorkspace(sourceId, workspaceId)
+        }
+      }
+      const openLocalFlow = () => {
+        setMessage('')
+        if (!flowAvailable) {
+          setMessage('Local directory picker is unavailable in this profile.')
+          return
+        }
+        setSplitterOpen(false)
+        setLocalFlowOpen(true)
+      }
+      const openRemoteFlow = () => {
+        setMessage('')
+        if (isRemoteDesktopIframe()) {
+          const { token, parent } = bridgeHash()
+          if (token === '' || parent === '') {
+            setMessage('Remote workspace setup requires the main host bridge.')
+            return
+          }
+          const requestId = `${Date.now()}-${Math.random()}`
+          const onResult = (event) => {
+            if (event.origin !== parent) return
+            const data = event.data
+            if (data?.type !== 'dsh-remote-desktop/add-workspace-remote-result' || data.requestId !== requestId) return
+            window.removeEventListener('message', onResult)
+            if (data.status === 'error') setMessage(data.message || 'Remote workspace setup failed')
+            else setSplitterOpen(false)
+          }
+          window.addEventListener('message', onResult)
+          window.parent?.postMessage({
+            type: 'dsh-remote-desktop/add-workspace-remote-request',
+            token,
+            requestId,
+          }, parent)
+          return
+        }
+        setSplitterOpen(false)
+        store.openRemoteSetup()
+      }
+      const localFlowOwner = {
+        open: localFlowOpen,
+        busy: localBusy,
+        onPicked: (path) => {
+          setLocalBusy(true)
+          props.createLocalWorkspace({ path }).then((workspace) => {
+            setLocalFlowOpen(false)
+            props.onPick(workspace.workspaceId)
+          }).catch((error) => {
+            setMessage(error instanceof Error ? error.message : String(error))
+            setLocalFlowOpen(false)
+            setSplitterOpen(true)
+          }).finally(() => { setLocalBusy(false) })
+        },
+        onCancel: () => { setLocalFlowOpen(false) },
+        onError: (error) => {
+          setMessage(error)
+          setLocalFlowOpen(false)
+          setSplitterOpen(true)
+        },
       }
       return h(React.Fragment, null,
-        props.open && h('div', {
-          className: 'rd-pickerMenu',
-          'data-rd-workspace-picker': 'remote-aware',
-          style: anchorRect ? { top: Math.round(anchorRect.bottom + 6), left: Math.round(anchorRect.left) } : {},
+        h(Menu, {
+          open: props.open,
+          anchor: null,
+          items: menuItems,
+          footer: footerItems,
+          selectedId: props.selectedId,
+          onSelect: handleMenuSelect,
+          onClose: closePicker,
+          portal: true,
+          getAnchorRect: () => anchorRect ?? null,
+        }),
+        h(Modal, {
+          open: splitterOpen,
+          onClose: () => setSplitterOpen(false),
+          title: 'Add workspace',
+          closeLabel: 'Close',
+          description: 'Choose where the workspace should live.',
+          footer: h(Button, { variant: 'outline', onClick: () => setSplitterOpen(false) }, 'Cancel'),
         },
-          localWorkspaces.map(ws => h('button', { key: `local:${ws.workspaceId}`, type: 'button', className: 'rd-pickerItem', onClick: () => { close(); props.onPick(ws.workspaceId) } },
-            h('span', null, '▣'),
-            h('span', { className: 'rd-pickerTitle' }, ws.title || ws.path || 'Workspace'),
-            h('span', { className: 'rd-pickerMeta' }, 'Local')
-          )),
-          remoteWorkspaceRows.length > 0 && h('div', { className: 'rd-pickerDivider' }),
-          remoteWorkspaceRows.map(({ source, workspace }) => h('button', { key: `${source.id}:${workspace.workspaceId}`, type: 'button', className: 'rd-pickerItem', onClick: () => void openRemoteWorkspace(source.id, workspace.workspaceId) },
-            h('span', null, '▣'),
-            h('span', { className: 'rd-pickerTitle' }, workspace.title || workspace.path || 'Workspace'),
-            h('span', { className: 'rd-pickerMeta' }, source.label)
-          )),
-          h('div', { className: 'rd-pickerDivider' }),
-          h('button', { type: 'button', className: 'rd-pickerItem', onClick: () => { props.onClose?.(); setAddOpen(true) }, 'data-rd-add-workspace': 'true' },
-            h('span', null, '+'),
-            h('span', { className: 'rd-pickerTitle' }, 'Add workspace…'),
-            h('span', { className: 'rd-pickerMeta' }, 'Local or remote')
+          h('div', { className: 'rd-addChoiceGrid', 'data-rd-add-workspace-splitter': 'true' },
+            h('button', { type: 'button', className: 'rd-addChoice', onClick: openLocalFlow, 'data-rd-add-local': 'true' },
+              h('span', { className: 'rd-addChoiceIcon' }, h(IconFolderOpenOutline16, { size: 16 })),
+              h('span', null,
+                h('span', { className: 'rd-addChoiceTitle' }, 'Local workspace'),
+                h('span', { className: 'rd-addChoiceDesc' }, 'Use the official picker for this DSH instance.')
+              )
+            ),
+            h('button', { type: 'button', className: 'rd-addChoice', onClick: openRemoteFlow, 'data-rd-add-remote': 'true' },
+              h('span', { className: 'rd-addChoiceIcon' }, h(IconPlusOutline16, { size: 16 })),
+              h('span', null,
+                h('span', { className: 'rd-addChoiceTitle' }, 'Remote workspace'),
+                h('span', { className: 'rd-addChoiceDesc' }, isRemoteDesktopIframe() ? 'Ask the main host to create one on a connected remote.' : 'Create one on a connected remote host.')
+              )
+            )
           ),
-          error && h('div', { className: 'rd-addError' }, error)
+          message && h('div', { className: 'rd-addError', role: 'alert' }, message)
         ),
-        h(AddWorkspaceDialog, {
-          open: addOpen,
-          sources: remote.sources,
-          createLocalWorkspace: props.createLocalWorkspace,
-          onLocalWorkspace: props.onPick,
-          onClose: () => setAddOpen(false),
-        })
+        props.renderSlot && props.renderSlot('conversation.hero.workspace.directoryFlow', localFlowOwner)
       )
     }
 
-    function AddWorkspaceDialog({ open, sources, createLocalWorkspace, onLocalWorkspace, onClose }) {
-      const connected = sources.filter(source => source.state === 'connected')
-      const [hostId, setHostId] = useState('local')
+    function RemoteSetupModal() {
+      const remote = useRemote(s => s)
+      const [hostId, setHostId] = useState('')
       const [path, setPath] = useState('')
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
-      useEffect(() => { if (open) { setHostId('local'); setPath(''); setError('') } }, [open])
-      if (!open) return null
+      const [hostMenuOpen, setHostMenuOpen] = useState(false)
+      const open = remote.remoteSetup.open
+      const connected = remote.sources.filter(source => source.state === 'connected')
+      const selected = connected.find(source => source.id === hostId) || connected[0]
+      useEffect(() => {
+        if (!open) return
+        setHostId(connected[0]?.id || '')
+        setPath('')
+        setError('')
+      }, [open, connected.map(source => source.id).join('\u0000')])
+      const close = (status = 'cancelled', message = '') => {
+        setHostMenuOpen(false)
+        setBusy(false)
+        setError('')
+        store.closeRemoteSetup(status, message)
+      }
       const submit = async () => {
+        const sourceId = selected?.id || hostId
         const trimmed = path.trim()
-        if (trimmed === '') { setError('Path is required'); return }
+        if (sourceId === '') { setError('Connect a remote host before adding a remote workspace.'); return }
+        if (trimmed === '') { setError('Remote path is required.'); return }
         setBusy(true)
         setError('')
         try {
-          if (hostId === 'local') {
-            const workspace = await createLocalWorkspace({ path: trimmed })
-            onClose()
-            onLocalWorkspace(workspace.workspaceId)
-          } else {
-            const result = await remoteRpc(hostId, 'workspace.create', { path: trimmed })
-            await store.refreshSnapshot(hostId)
-            onClose()
-            await startRemoteWorkspace(hostId, result.workspace.workspaceId)
-          }
+          const result = await remoteRpc(sourceId, 'workspace.create', { path: trimmed })
+          await store.refreshSnapshot(sourceId)
+          await startRemoteWorkspace(sourceId, result.workspace.workspaceId)
+          close('opened')
         } catch (e) {
-          setError(e.message || String(e))
+          const message = e.message || String(e)
+          setError(message)
         } finally {
           setBusy(false)
         }
       }
-      return h('div', { className: 'rd-addDialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Add workspace' },
-        h('div', { className: 'rd-addMask', onClick: busy ? undefined : onClose }),
-        h('div', { className: 'rd-addPanel' },
-          h('h2', { className: 'rd-addTitle' }, 'Add workspace'),
-          h('label', { className: 'rd-addLabel' }, 'Host',
-            h('select', { className: 'rd-addInput', value: hostId, disabled: busy, onChange: e => setHostId(e.target.value) },
-              h('option', { value: 'local' }, 'Local'),
-              connected.map(source => h('option', { key: source.id, value: source.id }, source.label))
-            )
+      const hostItems = connected.length === 0
+        ? [{ id: 'no-host', label: 'No connected hosts', disabled: true }]
+        : connected.map(source => ({ id: source.id, label: source.label }))
+      return h(Modal, {
+        open,
+        onClose: () => close('cancelled'),
+        title: 'Add remote workspace',
+        closeLabel: 'Close',
+        description: 'Choose a connected host and enter an absolute path on that host.',
+        footer: h(React.Fragment, null,
+          h(Button, { variant: 'outline', disabled: busy, onClick: () => close('cancelled') }, 'Cancel'),
+          h(Button, { variant: 'primary', disabled: busy || connected.length === 0, onClick: () => void submit(), 'data-rd-add-workspace-submit': 'true' }, busy ? 'Adding…' : 'Add')
+        ),
+      },
+        h('div', { 'data-rd-remote-workspace-setup': 'true' },
+          h('div', { className: 'rd-setupField' },
+            h('div', { className: 'rd-setupLabel' }, 'Host'),
+            h(Menu, {
+              open: hostMenuOpen,
+              anchor: h(Button, { variant: 'outline', className: 'rd-hostButton', disabled: busy || connected.length === 0, onClick: () => setHostMenuOpen(value => !value) },
+                h('span', { className: 'rd-hostButtonLabel' }, selected?.label || 'No connected hosts'),
+                h(IconChevronDownOutline14, { size: 14 })
+              ),
+              items: hostItems,
+              selectedId: selected?.id,
+              onSelect: (id) => { if (id !== 'no-host') setHostId(id); setHostMenuOpen(false) },
+              onClose: () => setHostMenuOpen(false),
+            })
           ),
-          h('label', { className: 'rd-addLabel' }, 'Directory path',
-            h('input', { className: 'rd-addInput', value: path, disabled: busy, placeholder: hostId === 'local' ? '/path/to/project' : 'Remote absolute path', onChange: e => setPath(e.target.value), onKeyDown: e => { if (e.key === 'Enter') void submit() } })
+          h('label', { className: 'rd-setupField' },
+            h('span', { className: 'rd-setupLabel' }, 'Remote absolute path'),
+            h(Input, { value: path, disabled: busy, placeholder: '/path/to/project', onChange: e => setPath(e.target.value), onKeyDown: e => { if (e.key === 'Enter') void submit() } })
           ),
-          hostId !== 'local' && h('div', { style: styles.hint }, 'Remote hosts must be connected before adding a workspace.'),
-          error && h('div', { className: 'rd-addError' }, error),
-          h('div', { className: 'rd-addActions' },
-            h('button', { type: 'button', disabled: busy, onClick: onClose }, 'Cancel'),
-            h('button', { type: 'button', disabled: busy, onClick: () => void submit(), 'data-rd-add-workspace-submit': 'true' }, busy ? 'Adding…' : 'Add')
-          )
+          connected.length === 0 && h('div', { className: 'rd-setupHint' }, 'Connect a host in Settings → Remote Desktop before creating a remote workspace.'),
+          error && h('div', { className: 'rd-addError', role: 'alert' }, error)
         )
       )
     }
@@ -575,9 +736,17 @@ window.__ModuleLoader__.load({
       }, [])
       useEffect(() => {
         const onMessage = (event) => {
-          if (event.data?.type !== 'dsh-remote-desktop/ready') return
-          const sourceId = tokenToSource.get(event.data.sourceToken)
-          if (sourceId !== undefined) store.markReady(sourceId)
+          const data = event.data
+          if (data?.type === 'dsh-remote-desktop/ready') {
+            const sourceId = tokenToSource.get(data.sourceToken)
+            if (sourceId !== undefined) store.markReady(sourceId)
+            return
+          }
+          if (!isAddWorkspaceBridgeRequest(data)) return
+          const sourceId = tokenToSource.get(data.token)
+          const source = sourceId === undefined ? undefined : sources.find(item => item.id === sourceId)
+          if (source === undefined || event.origin !== new URL(source.iframeUrl).origin) return
+          store.openRemoteSetup({ requestId: data.requestId, origin: event.origin, target: event.source })
         }
         window.addEventListener('message', onMessage)
         return () => window.removeEventListener('message', onMessage)
@@ -606,7 +775,10 @@ window.__ModuleLoader__.load({
           title: `Remote dsh ${s.label}`,
         })),
       )
-      return host ? ReactDOM.createPortal(overlay, host) : null
+      return h(React.Fragment, null,
+        host ? ReactDOM.createPortal(overlay, host) : null,
+        h(RemoteSetupModal, null)
+      )
     }
 
     function withParent(url) {
@@ -739,20 +911,34 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = function apply(ctx) {
-      if (new URLSearchParams(window.location.search).get('dshRemoteDesktop') === '1') return
-      installHostApiFetchPatch()
+      const iframeMode = isRemoteDesktopIframe()
+      if (!iframeMode) installHostApiFetchPatch()
       const openLocal = (sessionId) => ctx.sessions.open(sessionId)
       const createLocalWorkspace = input => ctx.workspaces.create(input)
-      if (typeof ctx.provide === 'function') ctx.provide('remoteDesktop', createService(openLocal))
-      else window.__dshRemoteDesktop = createService(openLocal)
+      const flowSource = {
+        getSnapshot: () => ctx.slots.entries('conversation.hero.workspace.directoryFlow').length > 0,
+        subscribe: listener => ctx.slots.subscribe('conversation.hero.workspace.directoryFlow', listener),
+      }
       ctx.slots.inject('conversation.hero.workspace', () => ctx.slots.register({
         name: 'conversation.hero.workspace',
         priority: -10,
-        inject: () => ({ createLocalWorkspace }),
-      }, RemoteWorkspacePicker))
+        children: { 'conversation.hero.workspace.directoryFlow': { kind: 'single', scope: 'root' } },
+        inject: () => ({ createLocalWorkspace, hooks: { directoryFlow: flowSource } }),
+      }, WorkspaceAddSplitter))
+      if (iframeMode) {
+        ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({
+          name: 'sidebar.workspaces',
+          priority: -10,
+          children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
+        }, DirectoryFlowAnchor))
+        return
+      }
+      if (typeof ctx.provide === 'function') ctx.provide('remoteDesktop', createService(openLocal))
+      else window.__dshRemoteDesktop = createService(openLocal)
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({
         name: 'sidebar.workspaces',
         priority: -10,
+        children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
         inject: () => ({ openLocal }),
       }, RemoteWorkspaceBrowser))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
