@@ -2636,6 +2636,9 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       return `${Math.floor(hours / 24)}d`
     }
 
+    const REMOTE_OVERLAY_Z_INDEX = 2147483000
+    const SETTINGS_OVERLAY_Z_INDEX = 2147483400
+
     function installCss() {
       if (document.querySelector('style[data-dsh-remote-desktop-sidebar]')) return () => {}
       const style = document.createElement('style')
@@ -2643,7 +2646,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       style.textContent = `
         .rd-settingsTrigger { flex: none; display: flex; align-items: center; gap: 8px; width: calc(100% + 8px); height: 34px; margin: 4px -4px; padding: 6px 2px 6px 10px; box-sizing: border-box; border: none; border-radius: 12px; background: transparent; cursor: pointer; color: var(--dsw-alias-label-primary); font: inherit; font-size: 14px; line-height: 22px; }
         .rd-settingsTrigger:hover { background: var(--dsw-alias-interactive-bg-hover); }
-        .rd-settingsOverlay { position: fixed; inset: 0; z-index: 2147482500; display: flex; align-items: center; justify-content: center; }
+        .rd-settingsOverlay { position: fixed; inset: 0; z-index: ${SETTINGS_OVERLAY_Z_INDEX}; display: flex; align-items: center; justify-content: center; }
         .rd-settingsMask { position: absolute; inset: 0; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,.24)); backdrop-filter: var(--dsw-mask-blur, blur(8px)); }
         .rd-settingsPanel { position: relative; z-index: 1; display: flex; width: 800px; height: min(800px, calc(100vh - 48px)); max-width: calc(100vw - 48px); border-radius: 24px; overflow: hidden; background: var(--dsw-alias-bg-layer-2, #fff); box-shadow: var(--dsw-shadow-lv3, 0 10px 40px rgba(0,0,0,.18)); color: var(--dsw-alias-label-primary); }
         .rd-settingsNav { flex: none; display: flex; flex-direction: column; gap: 18px; width: 188px; padding: 22px 12px 0; box-sizing: border-box; }
@@ -3232,9 +3235,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         document.addEventListener('keydown', onKeyDown)
         return () => document.removeEventListener('keydown', onKeyDown)
       }, [open])
-      return h(React.Fragment, null,
-        h('button', { type: 'button', className: 'rd-settingsTrigger', onClick: () => setOpen(true), 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' }, props.wide === false ? '⚙' : '⚙ Settings'),
-        open && h('div', { className: 'rd-settingsOverlay', role: 'presentation' },
+      const overlay = h('div', { className: 'rd-settingsOverlay', role: 'presentation' },
           h('div', { className: 'rd-settingsMask', onClick: close }),
           h('div', { className: 'rd-settingsPanel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings', 'data-rd-settings-active-host': activeHostId },
             h('nav', { className: 'rd-settingsNav' },
@@ -3256,6 +3257,10 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
             )
           )
         )
+      const overlayPortal = open ? ReactDOM.createPortal(overlay, document.body) : null
+      return h(React.Fragment, null,
+        h('button', { type: 'button', className: 'rd-settingsTrigger', onClick: () => setOpen(true), 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' }, props.wide === false ? '⚙' : '⚙ Settings'),
+        overlayPortal
       )
     }
 
@@ -3500,7 +3505,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
     const styles = {
       hint: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, padding: '6px 8px' },
       error: { color: 'var(--dsw-alias-state-error-primary)', fontSize: 12, padding: '6px 8px', whiteSpace: 'pre-wrap' },
-      overlay: { position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 2147483000, isolation: 'isolate', background: 'var(--dsw-alias-bg-base, #fff)', pointerEvents: 'auto' },
+      overlay: { position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: REMOTE_OVERLAY_Z_INDEX, isolation: 'isolate', background: 'var(--dsw-alias-bg-base, #fff)', pointerEvents: 'auto' },
       iframe: { width: '100%', height: '100%', border: 0, background: 'white' },
       settings: { padding: 16, maxWidth: 720, font: '14px system-ui, sans-serif' },
       label: { display: 'block', margin: '10px 0', fontSize: 12, color: 'inherit' },

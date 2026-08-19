@@ -4,7 +4,7 @@ Remote Desktop patch summary for official ui-workspace baseline 9f8359451a6f8df1
 - Use source-qualified workspace/session keys so local and remote ids cannot collide.
 - Route local session row opens to `ctx.sessions.open` and remote session row opens to `store.openRemote`.
 - Keep workspace row clicks as expand/collapse only.
-- Render one compact remote host label plus colored dot on remote project rows; host ids map deterministically to colors.
+- Render one compact remote host marker plus colored dot on remote project rows; host ids map deterministically to colors.
 - Hide unsupported remote mutation actions in this release.
 - Route the Add workspace affordance to `WorkspaceAddSplitter` so Local and Remote remain separate.
 

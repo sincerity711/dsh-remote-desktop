@@ -25,3 +25,14 @@ test('settings page lists ssh hosts and opens remote native DSH pages', async ()
   assert.doesNotMatch(client, /Save source/)
   assert.doesNotMatch(client, /data-rd-settings-save/)
 })
+
+test('settings dialog is portaled above the remote iframe overlay', async () => {
+  const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+
+  const remoteZ = Number(client.match(/const REMOTE_OVERLAY_Z_INDEX = (\d+)/)?.[1])
+  const settingsZ = Number(client.match(/const SETTINGS_OVERLAY_Z_INDEX = (\d+)/)?.[1])
+  assert.ok(settingsZ > remoteZ)
+  assert.match(client, /\.rd-settingsOverlay \{[^}]*z-index: \$\{SETTINGS_OVERLAY_Z_INDEX\}/)
+  assert.match(client, /zIndex: REMOTE_OVERLAY_Z_INDEX/)
+  assert.match(client, /const overlayPortal = open \? ReactDOM\.createPortal\(overlay, document\.body\) : null/)
+})
