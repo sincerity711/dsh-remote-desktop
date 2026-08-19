@@ -10,9 +10,10 @@ test('remote host API remains constrained for remote operations', async () => {
   assert.match(server, /source is not connected/)
 })
 
-test('settings host switcher opens the selected remote native DSH page', async () => {
+test('settings host action opens the selected remote native DSH page', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
 
+  assert.match(client, /ctx\.slots\.inject\('settings\.action'/)
   assert.match(client, /data-rd-settings-host-switcher/)
   assert.match(client, /data-rd-settings-active-host/)
   assert.match(client, /function nativeRemoteUrl/)

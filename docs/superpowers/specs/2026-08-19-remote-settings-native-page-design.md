@@ -52,18 +52,17 @@ http://127.0.0.1:<proxyPort>/
 
 The derived URL removes the `dshRemoteDesktop` query marker and token hash. The proxy server remains the same per-host loopback proxy; only the browser entry URL changes.
 
-The local Settings modal remains a local shell. Remote mode renders only the host state/open card. The remote DSH page is a separate top-level browsing context opened with `window.open(nativeUrl, '_blank', 'noopener,noreferrer')` or an equivalent anchor.
+The local Settings modal remains the official `ui-settings-general` shell. Remote Desktop contributes a Host selector through `settings.action` and a `Remote Desktop` page through `settings.section`. Selecting a connected remote host, or clicking Open in the Remote Desktop page, opens the remote DSH page as a separate top-level browsing context with `window.open(nativeUrl, '_blank', 'noopener,noreferrer')` or an equivalent anchor.
 
 ## Data flow
 
 ```mermaid
 flowchart LR
-  User["User opens local Settings"] --> LocalShell["Local Settings modal"]
-  LocalShell --> HostSwitcher["Host switcher"]
-  HostSwitcher -->|Local| LocalSettings["Local settings.section pages"]
-  HostSwitcher -->|Remote disconnected| ConnectCard["Remote host card with Connect"]
-  HostSwitcher -->|Remote connected| OpenCard["Remote host card with Open native DSH"]
-  OpenCard --> NativeUrl["http://127.0.0.1:<proxyPort>/"]
+  User["User opens local Settings"] --> OfficialShell["Official ui-settings-general shell"]
+  OfficialShell --> HostAction["settings.action Host selector"]
+  OfficialShell --> RemoteSection["settings.section Remote Desktop"]
+  HostAction -->|Connected remote| NativeUrl["http://127.0.0.1:<proxyPort>/"]
+  RemoteSection -->|Open connected remote| NativeUrl
   NativeUrl --> RemoteApp["Remote native DSH app"]
   RemoteApp --> RemoteSettings["Remote user opens native Settings"]
 ```
@@ -89,10 +88,10 @@ Use `noopener` when opening the page so the remote page cannot control the opene
 
 In scope:
 
-- Replace remote settings iframe behavior with a remote host card.
+- Replace remote settings iframe behavior with official Settings slot contributions.
 - Derive and open the native remote DSH URL for connected hosts.
-- Preserve local Settings pages for Local.
-- Keep host identity clear in the local Settings modal.
+- Preserve the official local Settings shell and local Settings pages.
+- Keep host identity clear through the `settings.action` Host selector and Remote Desktop page.
 - Add tests/static checks proving native URL derivation, absence of settings-only iframe behavior, and no token in the native settings URL.
 - Update acceptance/manual checklist to verify a remote native page opens.
 
@@ -100,7 +99,7 @@ Out of scope:
 
 - Embedding remote Settings inside the local modal.
 - Reimplementing remote Settings from settings APIs.
-- Replacing the remote official Settings shell.
+- Replacing the local or remote official Settings shell.
 - Forcing the remote native page to open directly on its Settings modal.
 - Suppressing remote onboarding. If remote onboarding appears, it is the remote app's native behavior.
 
@@ -109,7 +108,7 @@ Out of scope:
 Static/unit checks should prove:
 
 - The local client no longer uses `view=settings` or settings-only iframe behavior.
-- The remote host card renders for remote host selection.
+- The local plugin keeps `ui-settings-general` enabled and registers `settings.action` for the Host selector.
 - Connected remote host mode derives a native URL from `iframeUrl` by clearing search and hash.
 - The native Open action uses `noopener` and does not include `token` or `dshRemoteDesktop=1`.
 - Disconnected remote host mode shows Connect rather than Open.

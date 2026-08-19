@@ -18,15 +18,16 @@ const requiredClientNeedles = [
   'var(--dsw-specific-sidebar-fill)',
   'var(--dsw-alias-interactive-bg-hover)',
   "position: 'fixed'",
-  '2147483000',
+  'const REMOTE_OVERLAY_Z_INDEX = 900',
   'ReactDOM.createPortal',
   'data-rd-overlay-host',
   'data-rd-local-session-id',
   'data-rd-remote-session-id',
   'data-rd-workspace-source-kind',
-  'sidebar.settings',
+  "ctx.slots.inject('settings.action'",
   'data-rd-settings-host-switcher',
   'data-rd-settings-active-host',
+  'rd-settingsHostButton',
   'data-rd-settings-open-native',
   'data-rd-settings-native-link',
   'nativeRemoteUrl',
@@ -47,6 +48,7 @@ for (const needle of requiredClientNeedles) {
 const upstreamHash = '9f8359451a6f8df17f65bc2c398810ac19bdfc8a'
 if (!upstreamRecord.includes(upstreamHash)) throw new Error('ui-workspace upstream record missing pinned hash')
 if (!upstreamPatch.includes('remote host marker')) throw new Error('ui-workspace remote patch summary missing marker delta')
+if (/ui-settings-general[\s\S]*disabled: true/.test(localPatch)) throw new Error('ui-settings-general should remain enabled; extend official settings slots instead')
 
 const forbiddenSettingsIframeNeedles = [
   'function withSettingsView',

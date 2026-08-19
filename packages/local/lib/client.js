@@ -2636,44 +2636,24 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       return `${Math.floor(hours / 24)}d`
     }
 
-    const REMOTE_OVERLAY_Z_INDEX = 2147483000
-    const SETTINGS_OVERLAY_Z_INDEX = 2147483400
+    const REMOTE_OVERLAY_Z_INDEX = 900
 
     function installCss() {
       if (document.querySelector('style[data-dsh-remote-desktop-sidebar]')) return () => {}
       const style = document.createElement('style')
       style.setAttribute('data-dsh-remote-desktop-sidebar', '')
       style.textContent = `
-        .rd-settingsTrigger { flex: none; display: flex; align-items: center; gap: 8px; width: calc(100% + 8px); height: 34px; margin: 4px -4px; padding: 6px 2px 6px 10px; box-sizing: border-box; border: none; border-radius: 12px; background: transparent; cursor: pointer; color: var(--dsw-alias-label-primary); font: inherit; font-size: 14px; line-height: 22px; }
-        .rd-settingsTrigger:hover { background: var(--dsw-alias-interactive-bg-hover); }
-        .rd-settingsOverlay { position: fixed; inset: 0; z-index: ${SETTINGS_OVERLAY_Z_INDEX}; display: flex; align-items: center; justify-content: center; }
-        .rd-settingsMask { position: absolute; inset: 0; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,.24)); backdrop-filter: var(--dsw-mask-blur, blur(8px)); }
-        .rd-settingsPanel { position: relative; z-index: 1; display: flex; width: 800px; height: min(800px, calc(100vh - 48px)); max-width: calc(100vw - 48px); border-radius: 24px; overflow: hidden; background: var(--dsw-alias-bg-layer-2, #fff); box-shadow: var(--dsw-shadow-lv3, 0 10px 40px rgba(0,0,0,.18)); color: var(--dsw-alias-label-primary); }
-        .rd-settingsNav { flex: none; display: flex; flex-direction: column; gap: 18px; width: 188px; padding: 22px 12px 0; box-sizing: border-box; }
-        .rd-settingsTitle { padding: 0 12px; font-size: 16px; line-height: 24px; font-weight: 500; }
-        .rd-settingsHostSlot { display: flex; flex-direction: column; gap: 6px; padding: 0 6px; }
-        .rd-settingsHostLabel { padding: 0 6px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
-        .rd-settingsHostButton { justify-content: space-between; width: 100%; }
+        .rd-settingsHostAction { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .rd-settingsHostButton { justify-content: space-between; min-width: 168px; max-width: 260px; }
         .rd-settingsHostButtonText { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
         .rd-settingsHostOption { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
         .rd-settingsHostOptionText { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-        .rd-settingsNavList { display: flex; flex-direction: column; gap: 4px; }
-        .rd-settingsNavCell { display: flex; align-items: center; gap: 8px; height: 40px; padding: 9px 16px 9px 12px; box-sizing: border-box; border: none; border-radius: 12px; background: transparent; cursor: pointer; color: inherit; font: inherit; font-size: 14px; line-height: 22px; text-align: left; }
-        .rd-settingsNavCell:hover { background: var(--dsw-specific-sidebar-nav-item-hover, var(--dsw-alias-interactive-bg-hover)); }
-        .rd-settingsNavCell.rd-settingsActive { background: var(--dsw-specific-sidebar-nav-item-active, var(--dsw-alias-interactive-bg-hover)); }
-        .rd-settingsNavIcon { flex: none; }
-        .rd-settingsNavLabel { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-        .rd-settingsContent { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-        .rd-settingsHeader { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 54px; padding: 20px 14px 8px 10px; box-sizing: border-box; }
-        .rd-settingsActiveText { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
-        .rd-settingsClose { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 28px; background: transparent; cursor: pointer; color: inherit; font-size: 18px; }
-        .rd-settingsClose:hover { background: var(--dsw-alias-interactive-bg-hover); }
-        .rd-settingsOptions { flex: 1; min-height: 0; padding: 0 24px 24px; overflow-y: auto; }
-        .rd-settingsState { margin: 0 24px 24px; padding: 18px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
-        .rd-settingsStateTitle { font-size: 16px; line-height: 24px; font-weight: 520; margin-bottom: 6px; }
-        .rd-settingsStateBody { color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; }
-        .rd-settingsStateActions { display: flex; gap: 8px; margin-top: 14px; }
-        .rd-settingsNativeUrl { display: block; margin-top: 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; word-break: break-all; }
+        .rd-muted { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+        .rd-stateDot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--dsw-alias-label-tertiary); }
+        .rd-state-connected { background: var(--dsw-alias-state-success-primary); }
+        .rd-state-connecting { background: var(--dsw-alias-state-warning-primary); }
+        .rd-state-error { background: var(--dsw-alias-state-error-primary); }
+        .rd-settingsNativeUrl { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .rd-pickerMenu { position: fixed; z-index: 2147482600; min-width: 260px; max-width: min(360px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); }
         .rd-addChoiceGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
         .rd-addChoice { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 92px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
@@ -3212,62 +3192,6 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
     }
 
 
-    function slotLabel(label) {
-      if (typeof label === 'function') return String(label())
-      return label == null ? '' : String(label)
-    }
-
-    function SettingsShell(props) {
-      const rows = props.useSettingsSections(s => s)
-      const [open, setOpen] = useState(false)
-      const [activeId, setActiveId] = useState(undefined)
-      const [activeHostId, setActiveHostId] = useState(LOCAL_SOURCE_ID)
-      const localActive = activeHostId === LOCAL_SOURCE_ID
-      const active = rows.find(row => row.id === activeId)?.id ?? rows[0]?.id
-      const close = () => { setActiveHostId(LOCAL_SOURCE_ID); setOpen(false); setActiveId(undefined) }
-      useEffect(() => {
-        if (!open) return
-        void store.refreshSources()
-      }, [open])
-      useEffect(() => {
-        if (!open) return
-        const onKeyDown = (event) => { if (event.key === 'Escape') close() }
-        document.addEventListener('keydown', onKeyDown)
-        return () => document.removeEventListener('keydown', onKeyDown)
-      }, [open])
-      const overlay = h('div', { className: 'rd-settingsOverlay', role: 'presentation' },
-          h('div', { className: 'rd-settingsMask', onClick: close }),
-          h('div', { className: 'rd-settingsPanel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings', 'data-rd-settings-active-host': activeHostId },
-            h('nav', { className: 'rd-settingsNav' },
-              h('div', { className: 'rd-settingsTitle' }, 'Settings'),
-              h(SettingsHostFilter, { activeHostId, setActiveHostId }),
-              localActive && h('div', { className: 'rd-settingsNavList' }, rows.map(row => h('button', { key: row.id, type: 'button', className: `rd-settingsNavCell${row.id === active ? ' rd-settingsActive' : ''}`, onClick: () => setActiveId(row.id), 'aria-current': row.id === active ? 'true' : undefined },
-                h('span', { className: 'rd-settingsNavIcon' }, '⚙'),
-                h('span', { className: 'rd-settingsNavLabel' }, row.label)
-              )))
-            ),
-            h('div', { className: 'rd-settingsContent' },
-              h('div', { className: 'rd-settingsHeader' },
-                h('div', { className: 'rd-settingsActiveText' }, localActive ? 'Local settings' : `Remote settings: ${activeHostId}`),
-                h('button', { type: 'button', className: 'rd-settingsClose', onClick: close, 'aria-label': 'Close' }, '×')
-              ),
-              localActive
-                ? h('div', { className: 'rd-settingsOptions' }, active !== undefined && props.renderSlot('settings.section', { close }, { only: active }))
-                : h('div', { className: 'rd-settingsOptions' }, h(RemoteSettingsPane, { activeHostId }))
-            )
-          )
-        )
-      const overlayPortal = open ? ReactDOM.createPortal(overlay, document.body) : null
-      return h(React.Fragment, null,
-        h('button', { type: 'button', className: 'rd-settingsTrigger', onClick: () => setOpen(true), 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' }, props.wide === false ? '⚙' : '⚙ Settings'),
-        overlayPortal
-      )
-    }
-
-    function GeneralSection(props) {
-      return h('div', { style: styles.settings }, props.renderSlot('settings.general.item', {}))
-    }
-
     function settingsHostMenuLabel(source) {
       return h('span', { className: 'rd-settingsHostOption', 'data-rd-settings-host-option': source.id },
         source.id !== LOCAL_SOURCE_ID && h('span', { className: `rd-stateDot rd-state-${source.state || 'disconnected'}`, 'aria-hidden': 'true' }),
@@ -3276,23 +3200,34 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       )
     }
 
-    function SettingsHostFilter({ activeHostId, setActiveHostId }) {
+    function SettingsHostAction() {
       const sources = useRemote(s => s.sources)
       const [open, setOpen] = useState(false)
+      const [activeHostId, setActiveHostId] = useState(LOCAL_SOURCE_ID)
+      const [blockedUrl, setBlockedUrl] = useState('')
       useEffect(() => { void store.refreshSources() }, [])
       const local = { id: LOCAL_SOURCE_ID, label: 'Local', state: 'connected' }
-      const remoteHosts = sources.map(source => ({ id: source.id, label: source.label, state: source.state || 'disconnected' }))
-      const hosts = [local, ...remoteHosts]
+      const hosts = [local, ...sources.map(source => ({ id: source.id, label: source.label, state: source.state || 'disconnected', iframeUrl: source.iframeUrl }))]
       const active = hosts.find(source => source.id === activeHostId) || local
       const items = hosts.map(source => ({ id: source.id, label: settingsHostMenuLabel(source) }))
-      return h('div', { className: 'rd-settingsHostSlot', 'data-rd-settings-host-switcher': 'true' },
-        h('div', { className: 'rd-settingsHostLabel' }, 'Host'),
+      const selectHost = (id) => {
+        setOpen(false)
+        setActiveHostId(id)
+        setBlockedUrl('')
+        if (id === LOCAL_SOURCE_ID) return
+        const source = sources.find(item => item.id === id)
+        if (source?.state !== 'connected' || !source.iframeUrl) return
+        const nativeUrl = nativeRemoteUrl(source.iframeUrl)
+        const opened = window.open(nativeUrl, '_blank', 'noopener,noreferrer')
+        if (opened === null) setBlockedUrl(nativeUrl)
+      }
+      return h('div', { className: 'rd-settingsHostAction', 'data-rd-settings-host-switcher': 'true', 'data-rd-settings-active-host': active.id },
         h(Menu, {
           open,
           anchor: h(Button, {
             variant: 'outline',
             className: 'rd-settingsHostButton',
-            onClick: () => setOpen(value => !value),
+            onClick: () => { setOpen(value => !value); void store.refreshSources() },
             'aria-label': `Settings host, ${active.label}${active.id === LOCAL_SOURCE_ID ? '' : `, ${active.state}`}`,
             'data-rd-settings-host-filter-button': 'true',
           },
@@ -3302,55 +3237,10 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
           ),
           items,
           selectedId: active.id,
-          onSelect: (id) => { setActiveHostId(id); setOpen(false) },
+          onSelect: selectHost,
           onClose: () => setOpen(false),
-        })
-      )
-    }
-
-    function RemoteSettingsPane({ activeHostId }) {
-      const sources = useRemote(s => s.sources)
-      const [message, setMessage] = useState('')
-      const active = sources.find(source => source.id === activeHostId)
-      useEffect(() => { void store.refreshSources() }, [])
-      useEffect(() => { setMessage('') }, [activeHostId, active?.iframeUrl])
-      const connect = async () => {
-        setMessage('')
-        try { await store.connect(activeHostId) } catch (e) { setMessage(e.message || String(e)) }
-      }
-      if (active === undefined) {
-        return h(SettingsHostState, { title: `Unknown host: ${activeHostId}`, body: 'This host is no longer available. Choose Local or another host from the Host menu.' })
-      }
-      if (active.state !== 'connected' || !active.iframeUrl) {
-        return h(SettingsHostState, {
-          title: `Connect to ${active.label}`,
-          body: active.error || `Connect ${active.label} to open that host's native DSH page and configure Settings there.`,
-          action: h(Button, { variant: 'primary', onClick: () => void connect(), 'data-rd-settings-connect': activeHostId }, active.state === 'connecting' ? 'Connecting…' : 'Connect'),
-          message,
-        })
-      }
-      const nativeUrl = nativeRemoteUrl(active.iframeUrl)
-      const openNative = () => {
-        setMessage('')
-        const opened = window.open(nativeUrl, '_blank', 'noopener,noreferrer')
-        if (opened === null) setMessage('Your browser blocked the remote DSH page. Use the link below to open it.')
-      }
-      return h(SettingsHostState, {
-        title: `Open ${active.label} DSH`,
-        body: `Remote settings for ${active.label} are configured in that host's native DSH page. The page stays available while this host remains connected.`,
-        action: h(Button, { variant: 'primary', onClick: openNative, 'data-rd-settings-open-native': active.id }, `Open ${active.label} DSH`),
-        message,
-        url: nativeUrl,
-      })
-    }
-
-    function SettingsHostState({ title, body, action, message, url }) {
-      return h('div', { className: 'rd-settingsState', 'data-rd-settings-remote-state': 'true' },
-        h('div', { className: 'rd-settingsStateTitle' }, title),
-        h('div', { className: 'rd-settingsStateBody' }, body),
-        message && h('div', { className: 'rd-addError', role: 'alert' }, message),
-        action && h('div', { className: 'rd-settingsStateActions' }, action),
-        url && h('a', { className: 'rd-settingsNativeUrl', href: url, target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, url)
+        }),
+        blockedUrl && h('a', { className: 'rd-settingsNativeUrl', href: blockedUrl, target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, 'Open remote DSH')
       )
     }
 
@@ -3363,6 +3253,12 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       }
       const disconnect = async (id) => {
         try { await store.disconnect(id); setMessage('Disconnected') } catch (e) { setMessage(e.message || String(e)) }
+      }
+      const openNative = (source) => {
+        if (!source.iframeUrl) return
+        const nativeUrl = nativeRemoteUrl(source.iframeUrl)
+        const opened = window.open(nativeUrl, '_blank', 'noopener,noreferrer')
+        if (opened === null) setMessage(`Your browser blocked ${source.label}. Use the link in this host row to open it.`)
       }
       return h('div', { style: styles.settings, 'data-rd-settings-section': 'true' },
         h('h2', null, 'Remote Desktop'),
@@ -3378,9 +3274,11 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
           h('div', { style: styles.hint }, [source.sshUser, source.sshHost].filter(Boolean).join('@') || source.sshAlias || source.id),
           source.error && h('div', { style: styles.error }, source.error),
           h('div', { style: styles.actions },
-            h('button', { 'data-rd-settings-connect': source.id, onClick: () => void connect(source.id) }, 'Connect'),
-            h('button', { 'data-rd-settings-disconnect': source.id, onClick: () => void disconnect(source.id) }, 'Disconnect')
-          )
+            source.state === 'connected' && source.iframeUrl && h(Button, { variant: 'primary', 'data-rd-settings-open-native': source.id, onClick: () => openNative(source) }, `Open ${source.label} DSH`),
+            h(Button, { variant: 'outline', 'data-rd-settings-connect': source.id, onClick: () => void connect(source.id) }, 'Connect'),
+            h(Button, { variant: 'outline', 'data-rd-settings-disconnect': source.id, onClick: () => void disconnect(source.id) }, 'Disconnect')
+          ),
+          source.state === 'connected' && source.iframeUrl && h('a', { className: 'rd-settingsNativeUrl', href: nativeRemoteUrl(source.iframeUrl), target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, nativeRemoteUrl(source.iframeUrl))
         ))
       )
     }
@@ -3461,39 +3359,11 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         id: 'remote-desktop-overlay',
         order: 100,
       }, RemoteOverlay))
-      let rowsVersion = -1
-      let rows = []
-      const settingsShellInjected = () => ({
-        hooks: {
-          settingsSections: {
-            getSnapshot: () => {
-              const version = ctx.slots.getVersion('settings.section')
-              if (version !== rowsVersion) {
-                rowsVersion = version
-                rows = ctx.slots.entries('settings.section')
-                  .map(entry => ({ id: entry.options.id || '', order: entry.options.order || 0, label: slotLabel(entry.options.label) }))
-                  .sort((a, b) => a.order - b.order)
-              }
-              return rows
-            },
-            subscribe: listener => ctx.slots.subscribe('settings.section', listener),
-          },
-        },
-      })
-      ctx.slots.inject('sidebar.settings', () => ctx.slots.register({
-        name: 'sidebar.settings',
-        children: {
-          'settings.section': { kind: 'list', scope: 'root' },
-        },
-        inject: settingsShellInjected,
-      }, SettingsShell))
-      ctx.slots.inject('settings.section', () => ctx.slots.register({
-        name: 'settings.section',
-        id: 'general',
-        order: 0,
-        label: 'General',
-        children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
-      }, GeneralSection))
+      ctx.slots.inject('settings.action', () => ctx.slots.register({
+        name: 'settings.action',
+        id: 'remote-desktop-host',
+        order: 20,
+      }, SettingsHostAction))
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section',
         id: 'remote-desktop',
@@ -3505,13 +3375,10 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
     const styles = {
       hint: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, padding: '6px 8px' },
       error: { color: 'var(--dsw-alias-state-error-primary)', fontSize: 12, padding: '6px 8px', whiteSpace: 'pre-wrap' },
-      overlay: { position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: REMOTE_OVERLAY_Z_INDEX, isolation: 'isolate', background: 'var(--dsw-alias-bg-base, #fff)', pointerEvents: 'auto' },
-      iframe: { width: '100%', height: '100%', border: 0, background: 'white' },
+      overlay: { position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: REMOTE_OVERLAY_Z_INDEX, isolation: 'isolate', background: 'var(--dsw-alias-bg-base)', pointerEvents: 'auto' },
+      iframe: { width: '100%', height: '100%', border: 0, background: 'transparent' },
       settings: { padding: 16, maxWidth: 720, font: '14px system-ui, sans-serif' },
-      label: { display: 'block', margin: '10px 0', fontSize: 12, color: 'inherit' },
-      input: { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 8, borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2, #999)', background: 'transparent', color: 'inherit' },
-      button: { padding: '8px 12px', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2, #777)', background: 'transparent', color: 'inherit' },
-      card: { border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.35))', borderRadius: 10, padding: 10, margin: '8px 0' },
+      card: { border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 10, padding: 10, margin: '8px 0' },
       actions: { display: 'flex', gap: 8, marginTop: 8 },
       hostRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
       hostStatus: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12 },
