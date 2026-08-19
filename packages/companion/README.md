@@ -1,3 +1,21 @@
 # dsh-remote-desktop-companion
 
-Install on remote dsh profiles that should be controlled by dsh-remote-desktop. It listens for iframe open-session messages, validates the parent origin and per-host token, opens the requested remote session, and hides the embedded remote left sidebar.
+Remote companion plugin for `dsh-remote-desktop`.
+
+Install it in each remote DSH web profile that should be embedded by the local Remote Desktop controller. It runs only in `?dshRemoteDesktop=1` iframe mode, validates parent origin/token messages, opens requested remote sessions, and hides the embedded remote left sidebar.
+
+## Install
+
+```sh
+dsh plugin --profile web add dsh-remote-desktop-companion
+```
+
+Before npm publication, install from a local checkout on the remote machine/profile:
+
+```sh
+dsh plugin --profile web add /path/to/dsh-remote-desktop/packages/companion
+```
+
+## Architecture
+
+See the repository [architecture reference](https://github.com/sincerity711/dsh-remote-desktop/blob/main/docs/architecture.md) for iframe bridge, token validation, and companion behavior.

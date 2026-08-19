@@ -34,6 +34,35 @@
   "files": [
     "lib",
     "cordis.patch.yml",
-    "README.md"
-  ]
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "deepseek",
+    "cordis",
+    "remote-desktop",
+    "ssh",
+    "workspace",
+    "remote-workspace",
+    "web-ui"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sincerity711/dsh-remote-desktop.git",
+    "directory": "packages/local"
+  },
+  "bugs": {
+    "url": "https://github.com/sincerity711/dsh-remote-desktop/issues"
+  },
+  "homepage": "https://github.com/sincerity711/dsh-remote-desktop#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "dsh-remote-desktop-companion": "^0.1.0"
+  }
 }
