@@ -18,13 +18,17 @@ Keep this guide small. Load the linked docs only when the task touches that area
 ## Commands
 
 ```sh
-npm run check           # static gate for runtime files and acceptance scripts
-npm run acceptance:p0   # one win-wsl remote, full user path
-npm run acceptance:p1   # multi-remote/recovery/settings plus automated P2 subset
-npm run acceptance:all  # check + P0 + P1
+npm run check                    # static gate for runtime files and acceptance scripts
+npm run acceptance:container:up     # build/start two local Apple Container remotes
+npm run acceptance:container:p0     # one Apple container remote, full user path
+npm run acceptance:container:p1     # two Apple container remotes plus recovery/settings/P2 subset
+npm run acceptance:container:canary # retained local UI + two remotes for manual play
+npm run acceptance:container:down   # stop retained containers
+npm run acceptance:p0            # external win-wsl remote, full user path
+npm run acceptance:p1            # external multi-remote/recovery/settings path
 ```
 
-Run the smallest command that proves the change. Do not run acceptance commands unless the needed `win-wsl` SSH/browser prerequisites are available.
+Run the smallest command that proves the change. Prefer the Apple container acceptance commands for local validation; use the external `win-wsl` commands only when intentionally testing a real SSH host.
 
 ## Stable test homes
 
@@ -32,7 +36,10 @@ Use isolated, repeatable DSH homes for every manual or automated local/remote ru
 
 - Local manual web profile: `.acceptance/dev-home-30888` with port `30888`.
 - Local automated acceptance profile: `.acceptance/local-home`.
-- Remote DSH profile on each SSH host: `$HOME/.dsh-remote-desktop-test` with remote web port `30800`.
+- Local Apple container canary profile: `.acceptance/canary-local-home`.
+- Apple container SSH config and generated key: `.acceptance/container/`.
+- Apple container remote DSH profiles: `/home/dsh/.dsh-remote-desktop-test`, `/home/dsh/.dsh-remote-desktop-p1`, or `/home/dsh/.dsh-remote-desktop-canary` with remote web port `30800`.
+- External remote DSH profile on each SSH host: `$HOME/.dsh-remote-desktop-test` with remote web port `30800`.
 - Remote fixture data on each SSH host: `/tmp/dsh-remote-desktop-sentinel`.
 - If two test profiles must run on the same remote host at once, suffix both remote paths with the SSH host id, for example `$HOME/.dsh-remote-desktop-test-win-wsl` and `/tmp/dsh-remote-desktop-sentinel-win-wsl`.
 

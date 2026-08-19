@@ -1,0 +1,17 @@
+ARG DSH_RD_REMOTE_BASE_IMAGE=mcr.microsoft.com/devcontainers/javascript-node:22-bookworm
+FROM ${DSH_RD_REMOTE_BASE_IMAGE}
+
+COPY .acceptance/container/debs/*.deb /tmp/dsh-rd-debs/
+RUN dpkg -i /tmp/dsh-rd-debs/*.deb \
+  && rm -rf /tmp/dsh-rd-debs \
+  && corepack enable \
+  && useradd --create-home --shell /bin/bash dsh \
+  && mkdir -p /run/sshd \
+  && printf '#!/usr/bin/env bash\nexec /home/dsh/.npm-global/bin/dsh "$@"\n' > /usr/local/bin/dsh \
+  && chmod +x /usr/local/bin/dsh
+
+COPY scripts/acceptance/container/entrypoint.sh /usr/local/bin/dsh-remote-acceptance-entrypoint
+RUN chmod +x /usr/local/bin/dsh-remote-acceptance-entrypoint
+
+EXPOSE 22
+ENTRYPOINT ["/usr/local/bin/dsh-remote-acceptance-entrypoint"]

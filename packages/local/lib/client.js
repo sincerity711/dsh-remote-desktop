@@ -2787,7 +2787,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       return `${Math.floor(hours / 24)}d`
     }
 
-    const REMOTE_OVERLAY_Z_INDEX = 900
+    const REMOTE_OVERLAY_Z_INDEX = 2147483000
 
     function installCss() {
       if (document.querySelector('style[data-dsh-remote-desktop-sidebar]')) return () => {}
@@ -3480,7 +3480,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       }
       return h('div', { style: styles.settings, 'data-rd-settings-section': 'true' },
         h('h2', null, 'Remote Desktop'),
-        h('p', null, 'Hosts come from this machine\'s SSH config. A host is connected when its remote dsh web profile and companion answer through SSH.'),
+        h('p', null, 'Hosts come from this machine\'s SSH config. Installed remote dsh web profiles connect automatically; Connect installs the companion and starts the remote web profile when needed.'),
         message && h('div', { style: message.toLowerCase().includes('error') || message.toLowerCase().includes('required') ? styles.error : styles.hint }, message),
         h('h3', null, 'SSH hosts'),
         sources.length === 0 && h('div', { style: styles.hint }, 'No concrete Host entries found in ~/.ssh/config.'),
@@ -3498,7 +3498,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
           ),
           source.state === 'connected' && source.iframeUrl
             ? h('a', { className: 'rd-settingsNativeUrl', href: nativeRemoteUrl(source.iframeUrl), target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, nativeRemoteUrl(source.iframeUrl))
-            : h('div', { className: 'rd-settingsNativeUrl', 'data-rd-settings-native-placeholder': 'true' }, 'Connect to create a forwarded DSH Web URL for this host.')
+            : h('div', { className: 'rd-settingsNativeUrl', 'data-rd-settings-native-placeholder': 'true' }, 'Connect to install the remote companion and create a forwarded DSH Web URL for this host.')
         ))
       )
     }

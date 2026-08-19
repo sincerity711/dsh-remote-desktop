@@ -6,7 +6,7 @@ This document defines the acceptance standard for `dsh-remote-desktop`. The goal
 
 ### P0: required after every implementation change
 
-P0 is the hard gate for the first release. It uses one remote destination, `win-wsl`, but covers the complete user path:
+P0 is the hard gate for the first release. The recommended local run uses Apple container `remote-a`; the external-host run uses `win-wsl`. Both cover the complete user path:
 
 1. Prepare isolated local and remote dsh homes.
 2. Connect the local dsh page to the remote dsh instance through SSH.
@@ -17,15 +17,43 @@ P0 is the hard gate for the first release. It uses one remote destination, `win-
 7. Switch back from remote to local by clicking a local session row and prove the remote iframe no longer owns the interaction path.
 8. Save screenshots, logs, and a structured report.
 
-P0 must be automated by `scripts/acceptance/e2e-win-wsl.mjs` and exposed as `npm run acceptance:p0`.
+P0 must be automated by `scripts/acceptance/e2e-win-wsl.mjs` and exposed as `npm run acceptance:p0` for external hosts and `npm run acceptance:container:p0` for Apple container remotes.
 
 ### P1: required before release and after large interaction changes
 
-P1 covers multi-remote isolation, reconnect behavior, and Settings CRUD. It is automated by `scripts/acceptance/p1-p2-win-wsl.mjs` and exposed as `npm run acceptance:p1`.
+P1 covers multi-remote isolation, reconnect behavior, and Settings CRUD. The Apple container run uses separate `remote-a` and `remote-b` containers. It is automated by `scripts/acceptance/p1-p2-win-wsl.mjs` and exposed as `npm run acceptance:p1` for external hosts and `npm run acceptance:container:p1` for Apple container remotes.
 
 ### P2: long-term product quality
 
 P2 covers performance, broader plugin compatibility, security hardening, and layout polish. The first automated P2 subset runs as part of `npm run acceptance:p1`. The complete gate for this repository is `npm run acceptance:all`, which runs `check`, P0, and the automated P1/P2 subset.
+
+## Apple container local acceptance
+
+The recommended local acceptance path on macOS uses Apple container CLI as the local container backend. The repository creates two local SSH containers, `remote-a` and `remote-b`, and points Remote Desktop host discovery at `.acceptance/container/ssh-config` instead of the developer's default SSH config.
+
+Commands:
+
+```sh
+npm run acceptance:container:up
+npm run acceptance:container:p0
+npm run acceptance:container:p1
+npm run acceptance:container:all
+```
+
+The Apple container remotes are retained after P0/P1 so the developer can inspect them manually. Stop or remove them explicitly:
+
+```sh
+npm run acceptance:container:down
+npm run acceptance:container:clean
+```
+
+For manual validation without browser assertions, start the canary system:
+
+```sh
+npm run acceptance:container:canary
+```
+
+The canary command starts local DSH Web, connects both Apple container remotes, creates recognizable local and remote sessions, writes sentinel files, and prints the local browser URL plus SSH commands. It requires host Ollama with `minicpm-v4.6:1b`, configures that model as the routable default for local and remote sessions, and forwards remote model traffic through the retained host proxy. Seed-text generation may fall back to static fixture text after the model availability check; no hosted model credentials are required. Override the endpoint with `DSH_RD_OLLAMA_BASE_URL` and the model with `DSH_RD_OLLAMA_MODEL`.
 
 ## Environment rules
 
@@ -38,7 +66,19 @@ Local acceptance state:
 .acceptance/artifacts/
 ```
 
-Remote `win-wsl` acceptance state:
+Apple container acceptance state:
+
+```text
+.acceptance/container/
+.acceptance/canary-local-home/
+Apple containers dsh-rd-remote-a and dsh-rd-remote-b
+/home/dsh/.dsh-remote-desktop-test inside each container
+/home/dsh/.dsh-remote-desktop-p1 inside each container
+/home/dsh/.dsh-remote-desktop-canary inside each container
+/tmp/dsh-rd-* inside each container
+```
+
+External `win-wsl` acceptance state:
 
 ```text
 ~/.dsh-remote-desktop-test/
@@ -89,12 +129,13 @@ The script must run non-interactively. It may fail early when key-only SSH is un
 5. Install `dsh-better-sidebar` into the remote isolated web profile.
 6. Create `/tmp/dsh-remote-desktop-sentinel/remote-only.txt` with content `REMOTE_SENTINEL_WIN_WSL`.
 7. Start remote dsh on `127.0.0.1:30800` with `DSH_HOME=~/.dsh-remote-desktop-test`.
-8. Initialize local dsh with `DSH_HOME=.acceptance/local-home`.
-9. Install the local `dsh-remote-desktop` package into the local isolated web profile.
-10. Start local dsh on an available loopback port.
-11. Add and connect the `win-wsl` source through the local management API.
-12. Create a remote workspace pointing at `/tmp/dsh-remote-desktop-sentinel` and a remote session in that workspace.
-13. Create a local workspace/session in the local isolated home to verify the return-to-local path.
+8. Verify the remote profile uses the copied local companion artifact and the companion health route answers.
+9. Initialize local dsh with `DSH_HOME=.acceptance/local-home`.
+10. Install the local `dsh-remote-desktop` package into the local isolated web profile.
+11. Start local dsh on an available loopback port.
+12. Add and connect the `win-wsl` source through the local management API.
+13. Create a remote workspace pointing at `/tmp/dsh-remote-desktop-sentinel` and a remote session in that workspace.
+14. Create a local workspace/session in the local isolated home to verify the return-to-local path.
 
 ### P0 browser steps
 
@@ -173,6 +214,9 @@ A failing run must exit non-zero and include the failing item id in stdout.
 
 - **P0-BOOT-003 tunnel connects**
   PASS: the local management API reports `win-wsl.state === "connected"` and an iframe URL on a loopback origin.
+
+- **P0-BOOT-004 remote companion uses copied local artifact**
+  PASS: the remote web profile depends on `link:/tmp/dsh-remote-desktop-companion`, includes `dsh-remote-desktop-companion` in profile bundles, and the running remote DSH process answers the companion health route.
 
 ### SIDEBAR: unified left sidebar
 
@@ -285,13 +329,23 @@ A failing run must exit non-zero and include the failing item id in stdout.
 
 ### SETTINGS: source management UI
 
-- **P1-SETTINGS-001 create source from UI**
-- **P1-SETTINGS-002 edit source from UI**
-- **P1-SETTINGS-003 disconnect source from UI**
-- **P1-SETTINGS-004 delete source from UI**
-- **P1-SETTINGS-005 validation errors shown**
+- **P1-SETTINGS-000 host row opens remote native DSH page**
+  PASS: a connected host row exposes a native DSH URL that omits iframe mode and opens the same forwarded origin in a new page.
 
-Each Settings item passes only when the UI action changes the underlying management API state and the user-visible status reflects the outcome.
+- **P1-SETTINGS-001 ssh config hosts listed in UI**
+  PASS: every configured concrete SSH host appears in Remote Desktop settings.
+
+- **P1-SETTINGS-002 connected statuses shown in UI**
+  PASS: connected sources show their connected state in their host rows.
+
+- **P1-SETTINGS-003 disconnect host from UI**
+  PASS: a host row can disconnect its remote source and updates to the disconnected state.
+
+- **P1-SETTINGS-004 connect host from UI**
+  PASS: a host row can reconnect a disconnected source and restore its forwarded iframe origin.
+
+- **P1-SETTINGS-005 manual source form removed**
+  PASS: Remote Desktop settings is driven by SSH config host rows and no longer exposes manual source fields.
 
 ## P2 acceptance items
 

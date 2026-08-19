@@ -2,7 +2,7 @@
 
 Remote companion plugin for `dsh-remote-desktop`.
 
-Install it in each remote DSH web profile that should be embedded by the local Remote Desktop controller. It runs only in `?dshRemoteDesktop=1` iframe mode, validates parent origin/token messages, opens requested remote sessions, and hides the embedded remote left sidebar.
+Install it in each remote DSH web profile that should be embedded by the local Remote Desktop controller. It exposes a local health endpoint for the controller, runs only in `?dshRemoteDesktop=1` iframe mode, validates parent origin/token messages, opens requested remote sessions, and hides the embedded remote left sidebar.
 
 ## Install
 

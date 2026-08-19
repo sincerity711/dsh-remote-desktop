@@ -27,7 +27,7 @@ test('remote desktop settings section lists hosts and opens native remote pages'
   assert.match(client, /data-rd-settings-open-native/)
   assert.match(client, /data-rd-settings-native-link/)
   assert.match(client, /data-rd-settings-native-placeholder/)
-  assert.match(client, /Connect to create a forwarded DSH Web URL for this host\./)
+  assert.match(client, /Connect to install the remote companion and create a forwarded DSH Web URL for this host\./)
   assert.match(client, /disabled: source\.state !== 'connected' \|\| !source\.iframeUrl/)
   assert.match(client, /h\(Button, \{ variant: 'primary'/)
   assert.match(client, /h\(Button, \{ variant: 'outline'/)

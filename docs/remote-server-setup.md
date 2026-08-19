@@ -1,6 +1,6 @@
 # Remote server setup
 
-The first release expects the remote dsh web profile to already be running on the remote machine and reachable from that machine's loopback interface.
+The local controller auto-connects SSH hosts whose remote web profile already has `dsh` and `dsh-remote-desktop-companion` installed and reachable from that machine's loopback interface. The Settings Connect action installs the companion over SSH, starts the remote web profile on the configured loopback port when needed, then connects.
 
 Example remote command:
 
@@ -26,6 +26,6 @@ Host win-wsl
   User your-user
 ```
 
-The local plugin reads concrete `Host` entries from `~/.ssh/config`, connects with `ssh <alias>`, and creates a local tunnel to `127.0.0.1:<remote-port>` on the remote machine. It does not start or stop the remote dsh process in the first release.
+The local plugin reads concrete `Host` entries from `~/.ssh/config`, connects with `ssh <alias>`, and creates a local tunnel to `127.0.0.1:<remote-port>` on the remote machine. Automatic startup only connects already prepared profiles; the explicit Connect action is the setup path for installing the companion and starting remote DSH.
 
 Other remote plugins, such as `dsh-better-sidebar`, stay installed on the remote profile. They run inside the remote iframe and keep using root-relative paths like `/api/*`, `/plugins/*`, and `/sidebar/*`.

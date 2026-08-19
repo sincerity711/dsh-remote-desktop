@@ -6,6 +6,10 @@ const companionClient = await readFile('packages/companion/lib/client.js', 'utf8
 const localPatch = await readFile('packages/local/cordis.patch.yml', 'utf8')
 const upstreamRecord = await readFile('packages/local/upstream/ui-workspace/UPSTREAM.md', 'utf8')
 const upstreamPatch = await readFile('packages/local/upstream/ui-workspace/remote-desktop.patch', 'utf8')
+const packageJson = JSON.parse(await readFile('package.json', 'utf8'))
+const containerEnv = await readFile('scripts/acceptance/container-env.mjs', 'utf8')
+const containerDockerfile = await readFile('scripts/acceptance/container/Dockerfile.remote', 'utf8')
+const containerEntrypoint = await readFile('scripts/acceptance/container/entrypoint.sh', 'utf8')
 
 const requiredClientNeedles = [
   'ctx.provide(\'remoteDesktop\'',
@@ -18,7 +22,7 @@ const requiredClientNeedles = [
   'var(--dsw-specific-sidebar-fill)',
   'var(--dsw-alias-interactive-bg-hover)',
   "position: 'fixed'",
-  'const REMOTE_OVERLAY_Z_INDEX = 900',
+  'const REMOTE_OVERLAY_Z_INDEX = 2147483000',
   'ReactDOM.createPortal',
   'data-rd-overlay-host',
   'data-rd-local-session-id',
@@ -140,5 +144,25 @@ if (companionClient.includes('[class*="frame"] { grid-template-columns')) {
 if (!localPatch.includes('- id: ui-workspace\n  disabled: true')) {
   throw new Error('remote desktop must own the workspace picker when installing the splitter')
 }
+
+
+const requiredContainerScripts = [
+  'acceptance:container:up',
+  'acceptance:container:p0',
+  'acceptance:container:p1',
+  'acceptance:container:canary',
+  'acceptance:container:down',
+  'acceptance:container:clean',
+]
+for (const name of requiredContainerScripts) {
+  if (typeof packageJson.scripts?.[name] !== 'string') throw new Error(`package.json missing ${name}`)
+}
+for (const needle of ['remote-a', 'remote-b', 'minicpm-v4.6:1b', 'DSH_REMOTE_DESKTOP_SSH_CONFIG', 'stateDir', 'containerBin']) {
+  if (!containerEnv.includes(needle)) throw new Error(`Apple container acceptance helper missing ${needle}`)
+}
+for (const needle of ['dsh-rd-debs', 'javascript-node:22-bookworm']) {
+  if (!containerDockerfile.includes(needle)) throw new Error(`Apple container remote image file missing ${needle}`)
+}
+if (!containerEntrypoint.includes('DSH_AUTHORIZED_KEYS')) throw new Error('Apple container entrypoint missing DSH_AUTHORIZED_KEYS')
 
 console.log('static remote desktop checks passed')

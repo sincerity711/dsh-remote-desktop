@@ -113,7 +113,31 @@ The publishable packages also carry matching npm `keywords`.
 npm run check
 ```
 
-Acceptance commands require the documented remote host prerequisites:
+For local acceptance on macOS, use Apple container:
+
+```sh
+npm run acceptance:container:up
+npm run acceptance:container:p0
+npm run acceptance:container:p1
+```
+
+Start a retained canary system for manual play with local and remote seeded sessions:
+
+```sh
+ollama pull minicpm-v4.6:1b
+npm run acceptance:container:canary
+```
+
+The canary requires the host Ollama service and configures `minicpm-v4.6:1b` as the routable default model for the local DSH instance and both remote DSH instances. Set `DSH_RD_OLLAMA_MODEL` or `DSH_RD_OLLAMA_BASE_URL` to override the model or host endpoint.
+
+The Apple container remotes stay running until explicitly stopped:
+
+```sh
+npm run acceptance:container:down
+npm run acceptance:container:clean
+```
+
+External SSH-host acceptance remains available when intentionally validating a real remote host:
 
 ```sh
 npm run acceptance:p0

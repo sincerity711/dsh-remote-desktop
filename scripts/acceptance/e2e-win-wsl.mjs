@@ -11,14 +11,17 @@ import { randomUUID } from 'node:crypto'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(__dirname, '../..')
 const args = parseArgs(process.argv.slice(2))
-const sshDest = args['ssh-dest'] ?? 'win-wsl'
+const containerRemotes = args['container-remotes'] === 'true' || args['docker-remotes'] === 'true'
+const keepLocalDsh = args['keep-local-dsh'] === 'true'
+const sshDest = args['ssh-dest'] ?? (containerRemotes ? 'remote-a' : 'win-wsl')
 const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'deepseek-harness'))
 const remoteHome = args['remote-home'] ?? '~/.dsh-remote-desktop-test'
 const remoteSentinelDir = '/tmp/dsh-remote-desktop-sentinel'
 const remotePort = Number(args['remote-port'] ?? 30800)
 const artifactsRoot = join(repoRoot, '.acceptance', 'artifacts')
 const localHome = resolve(repoRoot, '.acceptance', 'local-home')
-const localSshConfig = join(localHome, 'ssh-config')
+const containerSshConfig = join(repoRoot, '.acceptance', 'container', 'ssh-config')
+const localSshConfig = containerRemotes ? containerSshConfig : join(localHome, 'ssh-config')
 const localPlugin = resolve(repoRoot, 'packages/local')
 const companionSource = resolve(repoRoot, 'packages/companion')
 const runId = new Date().toISOString().replaceAll(/[:.]/g, '-')
@@ -34,6 +37,7 @@ let remoteProxyOrigin = ''
 let remoteSessionId = ''
 let localSessionId = ''
 let sourceToken = ''
+let remoteProxyExports = ''
 
 await mkdir(artifactDir, { recursive: true })
 process.on('exit', stopStarted)
@@ -49,7 +53,11 @@ try {
   await item('P0-ENV-001', 'local home isolation', async () => {
     await rm(localHome, { recursive: true, force: true })
     await mkdir(localHome, { recursive: true })
-    await writeFile(localSshConfig, `Include ~/.ssh/config\nHost ${sshDest}\n  HostName ${sshDest}\n  User ${await remoteUser()}\n`)
+    if (containerRemotes) {
+      if (!existsSync(localSshConfig)) throw new Error(`Apple container SSH config missing: ${localSshConfig}. Run npm run acceptance:container:up`)
+    } else {
+      await writeFile(localSshConfig, `Include ~/.ssh/config\nHost ${sshDest}\n  HostName ${sshDest}\n  User ${await remoteUser()}\n`)
+    }
     return `local DSH_HOME=${localHome}, ssh config=${localSshConfig}`
   })
   await item('P0-ENV-002', 'remote home isolation', async () => {
@@ -57,10 +65,11 @@ try {
     return `remote DSH_HOME=${remoteHome}`
   })
   await item('P0-ENV-003', 'ssh key-only', async () => {
-    await cmd('ssh', ['-o', 'BatchMode=yes', sshDest, 'true'], { timeoutMs: 10000 })
+    await cmd('ssh', sshArgs('true'), { timeoutMs: 10000 })
     return `ssh BatchMode ${sshDest} succeeded`
   })
 
+  if (containerRemotes) remoteProxyExports = await startHostProxy()
   await setupRemote()
   await setupLocal()
   await setupData()
@@ -77,16 +86,40 @@ try {
     return 'acceptance-report.json saved'
   })
   await writeReport()
-  stopStarted()
+  if (!keepLocalDsh) stopStarted()
   console.log(`\nP0 acceptance PASS. Artifacts: ${artifactDir}`)
+  if (keepLocalDsh) console.log(`Local DSH kept running: ${localBase}`)
   printCleanup()
 } catch (error) {
   await writeReport().catch(() => {})
-  stopStarted()
+  if (!keepLocalDsh) stopStarted()
+  else if (localBase) console.error(`Local DSH kept running after failure: ${localBase}`)
   console.error(`\nP0 acceptance FAIL: ${error.message}`)
   console.error(`Artifacts: ${artifactDir}`)
   printCleanup()
   process.exit(1)
+}
+
+
+async function startHostProxy() {
+  const child = spawn(process.execPath, [join(repoRoot, 'scripts/acceptance/host-connect-proxy.mjs')], { stdio: ['ignore', 'pipe', 'inherit'] })
+  started.push(child)
+  const line = await new Promise((resolve, reject) => {
+    let data = ''
+    const timer = setTimeout(() => reject(new Error('host proxy did not start')), 10000)
+    child.stdout.on('data', chunk => {
+      data += String(chunk)
+      const end = data.indexOf('\n')
+      if (end !== -1) {
+        clearTimeout(timer)
+        resolve(data.slice(0, end))
+      }
+    })
+    child.once('exit', code => reject(new Error(`host proxy exited early: ${code}`)))
+  })
+  const { port } = JSON.parse(line)
+  const proxy = `http://192.168.64.1:${port}`
+  return `export HTTP_PROXY=${proxy} HTTPS_PROXY=${proxy} npm_config_proxy=${proxy} npm_config_https_proxy=${proxy} NO_PROXY=127.0.0.1,localhost,192.168.64.0/24 no_proxy=127.0.0.1,localhost,192.168.64.0/24`
 }
 
 async function setupRemote() {
@@ -96,8 +129,11 @@ async function setupRemote() {
     if (major < 22) throw new Error(`remote node ${nodeVersion} < 22`)
     await copyCompanionToRemote()
     await ssh(`set -e
+      ${remoteProxyExports}
+      mkdir -p "$HOME/.npm-global"
+      npm config set prefix "$HOME/.npm-global"
       export PATH=\"$HOME/.npm-global/bin:$PATH\"
-      if ! command -v dsh >/dev/null 2>&1; then npm install -g @deepseek-ai/dsh@0.1.0-rc.7; fi
+      if [ ! -x "$HOME/.npm-global/bin/dsh" ]; then npm install -g @deepseek-ai/dsh@0.1.0-rc.7; fi
       DSH_HOME=${remoteHome} dsh --profile web --dump-config >/tmp/dsh-remote-desktop-dump.txt
       cd ${remoteHome}/profiles/web
       node - <<'NODE'
@@ -116,7 +152,10 @@ pkg.pnpm.onlyBuiltDependencies = Array.from(new Set([...(pkg.pnpm.onlyBuiltDepen
 fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n')
 NODE
       grep -q 'minimumReleaseAgeExclude' pnpm-workspace.yaml 2>/dev/null || printf '\nminimumReleaseAgeExclude:\n  - dsh-better-sidebar\n' >> pnpm-workspace.yaml
-      CI=true pnpm install --no-frozen-lockfile
+      grep -q 'onlyBuiltDependencies' pnpm-workspace.yaml 2>/dev/null || printf '\nonlyBuiltDependencies:\n  - node-pty\n  - protobufjs\n' >> pnpm-workspace.yaml
+      grep -q 'allowBuilds:' pnpm-workspace.yaml 2>/dev/null || printf '\nallowBuilds:\n  node-pty: true\n  protobufjs: true\n' >> pnpm-workspace.yaml
+
+      CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       pnpm rebuild node-pty >/tmp/dsh-remote-desktop-node-pty.log 2>&1 || true
       printf 'REMOTE_SENTINEL_WIN_WSL\n' > ${remoteSentinelDir}/remote-only.txt
       if [ -f /tmp/dsh-remote-desktop-web.pid ]; then kill $(cat /tmp/dsh-remote-desktop-web.pid) 2>/dev/null || true; fi
@@ -125,6 +164,15 @@ NODE
     await waitForRemoteDsh()
     remoteDshLog = await ssh('cat /tmp/dsh-remote-desktop-web.log 2>/dev/null || true')
     return `remote dsh answers host.describe on 127.0.0.1:${remotePort}`
+  })
+  await item('P0-BOOT-004', 'remote companion uses copied local artifact', async () => {
+    const profilePackage = await ssh(`cat ${remoteHome}/profiles/web/package.json`)
+    const pkg = JSON.parse(profilePackage)
+    if (pkg.dependencies?.['dsh-remote-desktop-companion'] !== 'link:/tmp/dsh-remote-desktop-companion') throw new Error('remote companion dependency does not use copied local artifact')
+    if (!pkg.dsh?.profile?.bundles?.includes('dsh-remote-desktop-companion')) throw new Error('remote companion bundle missing from remote profile')
+    const health = await remoteCompanionHealth()
+    if (health.name !== 'dsh-remote-desktop-companion') throw new Error(`unexpected companion health name ${health.name}`)
+    return 'remote profile links /tmp/dsh-remote-desktop-companion and companion health answers'
   })
 }
 
@@ -142,12 +190,16 @@ async function setupLocal() {
     const logPath = join(artifactDir, 'local-dsh-live.log')
     const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(localPort), '--trusted-host', `127.0.0.1:${localPort}`], {
       cwd: harnessRoot,
-      env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig, ...(containerRemotes ? { DSH_REMOTE_DESKTOP_SKIP_SETUP: '1' } : {}) },
+      detached: keepLocalDsh,
+      stdio: keepLocalDsh ? 'ignore' : ['ignore', 'pipe', 'pipe'],
     })
-    started.push(child)
-    child.stdout.on('data', b => { localDshLog += String(b) })
-    child.stderr.on('data', b => { localDshLog += String(b) })
+    if (keepLocalDsh) child.unref()
+    else {
+      started.push(child)
+      child.stdout.on('data', b => { localDshLog += String(b) })
+      child.stderr.on('data', b => { localDshLog += String(b) })
+    }
     localBase = `http://127.0.0.1:${localPort}`
     await waitRemoteDesktopApi(60000)
     await writeFile(logPath, localDshLog)
@@ -156,7 +208,7 @@ async function setupLocal() {
   await item('P0-BOOT-003', 'tunnel connects', async () => {
     const hosts = (await api('/hosts')).hosts
     if (!hosts.some(host => host.id === sshDest)) throw new Error(`${sshDest} missing from ssh config hosts`)
-    const source = (await api('/connect', { method: 'POST', body: JSON.stringify({ id: sshDest }) })).source
+    const source = (await api('/connect', { method: 'POST', body: JSON.stringify({ id: sshDest, setup: !containerRemotes }) })).source
     if (source.state !== 'connected') throw new Error(`state=${source.state}`)
     if (!/^http:\/\/127\.0\.0\.1:\d+\//.test(source.iframeUrl ?? '')) throw new Error(`bad iframeUrl ${source.iframeUrl}`)
     remoteProxyOrigin = new URL(source.iframeUrl).origin
@@ -462,7 +514,7 @@ async function copyCompanionToRemote() {
   const tar = join(artifactDir, 'companion.tar.gz')
   await cmd('tar', ['czf', tar, '-C', companionSource, '.'])
   await ssh('rm -rf /tmp/dsh-remote-desktop-companion && mkdir -p /tmp/dsh-remote-desktop-companion')
-  await cmd('scp', [tar, `${sshDest}:/tmp/dsh-remote-desktop-companion.tar.gz`], { timeoutMs: 30000 })
+  await cmd('scp', scpArgs(tar, `${sshDest}:/tmp/dsh-remote-desktop-companion.tar.gz`), { timeoutMs: 30000 })
   await ssh('tar xzf /tmp/dsh-remote-desktop-companion.tar.gz -C /tmp/dsh-remote-desktop-companion')
 }
 
@@ -478,6 +530,15 @@ async function waitForRemoteDsh() {
   }
   remoteDshLog = await ssh('cat /tmp/dsh-remote-desktop-web.log 2>/dev/null || true').catch(() => '')
   throw new Error(`remote dsh did not boot. Log:\n${remoteDshLog}`)
+}
+
+async function remoteCompanionHealth() {
+  const script = `
+const res = await fetch('http://127.0.0.1:${remotePort}/remote-desktop-companion/api/health');
+if (!res.ok) throw new Error('HTTP ' + res.status);
+console.log(JSON.stringify(await res.json()));
+`
+  return JSON.parse(await ssh(`node --input-type=module -e ${sh(script)}`))
 }
 
 async function remoteRpc(method, payload) {
@@ -555,8 +616,17 @@ async function runHarness(args, env, timeoutMs) {
 }
 
 async function ssh(command, options = {}) {
-  return await cmd('ssh', ['-o', 'BatchMode=yes', sshDest, command], { timeoutMs: options.timeoutMs ?? 30000 })
+  return await cmd('ssh', sshArgs(command), { timeoutMs: options.timeoutMs ?? 30000 })
 }
+
+function sshArgs(command) {
+  return [...(containerRemotes ? ['-F', localSshConfig] : []), '-o', 'BatchMode=yes', sshDest, command]
+}
+
+function scpArgs(source, target) {
+  return [...(containerRemotes ? ['-F', localSshConfig] : []), source, target]
+}
+
 
 async function remoteUser() {
   return (await ssh('whoami')).trim()
@@ -711,5 +781,10 @@ async function writeReport() {
 function printCleanup() {
   console.log('\nCleanup commands:')
   console.log('rm -rf .acceptance/local-home .acceptance/artifacts')
-  console.log(`${`ssh ${sshDest} `}${sh(`rm -rf ${remoteHome} ${remoteSentinelDir}`)}`)
+  if (containerRemotes) {
+    console.log('npm run acceptance:container:down')
+    console.log('npm run acceptance:container:clean')
+  } else {
+    console.log(`${`ssh ${sshDest} `}${sh(`rm -rf ${remoteHome} ${remoteSentinelDir}`)}`)
+  }
 }

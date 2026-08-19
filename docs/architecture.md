@@ -72,17 +72,19 @@ sequenceDiagram
   participant Proxy as Per-host proxy
 
   UI->>API: POST /connect { id }
+  API->>SSH: ssh host dsh plugin --profile web add companion
+  API->>SSH: ssh host dsh --profile web --host remoteHost --port remotePort when needed
   API->>SSH: ssh -N -L 127.0.0.1:local:remoteHost:remotePort host
   API->>API: wait for local TCP port
   API->>Proxy: start loopback proxy to tunnel port
-  API->>Remote: verify through later snapshots/API calls
+  API->>Remote: verify host.describe and companion boot entry
   API-->>UI: iframeUrl + token + state connected
   UI->>API: GET /snapshot?id=host
   API->>Remote: session.list + workspace.list
   API-->>UI: remote sessions/workspaces
 ```
 
-Disconnect and cleanup kill the SSH process, close the proxy server, and remove active remote UI state for that host.
+On startup, the local plugin starts prepared remote profiles that already list the companion in the web profile, then runs the same tunnel and companion health checks without the installation step so prepared remote profiles connect automatically. Disconnect and cleanup kill the SSH process, close the proxy server, and remove active remote UI state for that host.
 
 ## Local client plugin
 
@@ -142,7 +144,7 @@ It performs three tasks:
 2. posts periodic `ready` messages to the validated parent origin;
 3. listens for validated `open-session` messages and repeatedly calls `ctx.sessions.open(sessionId)` until the requested session becomes current or times out.
 
-The server entry point `packages/companion/lib/index.js` is intentionally empty because the companion behavior is browser-side only.
+The server entry point `packages/companion/lib/index.js` registers `/remote-desktop-companion/api/health`; the local controller also accepts the companion client boot entry so existing installed companion profiles continue to connect.
 
 ## Workspace add flow
 

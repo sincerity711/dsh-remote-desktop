@@ -39,3 +39,13 @@ test('remote browse API is read-only and separate from host RPC proxy', async ()
   assert.match(server, /proc\.stdin\.end\(JSON\.stringify\(\{ path: input\.path, hidden: Boolean\(input\.hidden\) \}\)\)/)
   assert.doesNotMatch(server, /host-api[\s\S]{0,240}browseRemoteDirectory/)
 })
+
+
+test('remote connection verification accepts companion boot entry', async () => {
+  const server = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
+
+  assert.match(server, /function probeRemoteCompanion/)
+  assert.match(server, /html\.includes\(REMOTE_COMPANION_PACKAGE\)/)
+  assert.match(server, /await rpc\(port, 'host\.describe', \{\}\)/)
+  assert.match(server, /await verifyRemoteReady\(tunnelPort\)/)
+})
