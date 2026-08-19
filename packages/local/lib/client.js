@@ -2643,16 +2643,6 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       const style = document.createElement('style')
       style.setAttribute('data-dsh-remote-desktop-sidebar', '')
       style.textContent = `
-        .rd-settingsHostAction { display: flex; align-items: center; gap: 8px; min-width: 0; }
-        .rd-settingsHostButton { justify-content: space-between; min-width: 168px; max-width: 260px; }
-        .rd-settingsHostButtonText { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
-        .rd-settingsHostOption { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-        .rd-settingsHostOptionText { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-        .rd-muted { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
-        .rd-stateDot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--dsw-alias-label-tertiary); }
-        .rd-state-connected { background: var(--dsw-alias-state-success-primary); }
-        .rd-state-connecting { background: var(--dsw-alias-state-warning-primary); }
-        .rd-state-error { background: var(--dsw-alias-state-error-primary); }
         .rd-settingsNativeUrl { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .rd-pickerMenu { position: fixed; z-index: 2147482600; min-width: 260px; max-width: min(360px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); }
         .rd-addChoiceGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -3192,58 +3182,6 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
     }
 
 
-    function settingsHostMenuLabel(source) {
-      return h('span', { className: 'rd-settingsHostOption', 'data-rd-settings-host-option': source.id },
-        source.id !== LOCAL_SOURCE_ID && h('span', { className: `rd-stateDot rd-state-${source.state || 'disconnected'}`, 'aria-hidden': 'true' }),
-        h('span', { className: 'rd-settingsHostOptionText' }, source.label),
-        source.id !== LOCAL_SOURCE_ID && h('span', { className: 'rd-muted' }, source.state || 'disconnected')
-      )
-    }
-
-    function SettingsHostAction() {
-      const sources = useRemote(s => s.sources)
-      const [open, setOpen] = useState(false)
-      const [activeHostId, setActiveHostId] = useState(LOCAL_SOURCE_ID)
-      const [blockedUrl, setBlockedUrl] = useState('')
-      useEffect(() => { void store.refreshSources() }, [])
-      const local = { id: LOCAL_SOURCE_ID, label: 'Local', state: 'connected' }
-      const hosts = [local, ...sources.map(source => ({ id: source.id, label: source.label, state: source.state || 'disconnected', iframeUrl: source.iframeUrl }))]
-      const active = hosts.find(source => source.id === activeHostId) || local
-      const items = hosts.map(source => ({ id: source.id, label: settingsHostMenuLabel(source) }))
-      const selectHost = (id) => {
-        setOpen(false)
-        setActiveHostId(id)
-        setBlockedUrl('')
-        if (id === LOCAL_SOURCE_ID) return
-        const source = sources.find(item => item.id === id)
-        if (source?.state !== 'connected' || !source.iframeUrl) return
-        const nativeUrl = nativeRemoteUrl(source.iframeUrl)
-        const opened = window.open(nativeUrl, '_blank', 'noopener,noreferrer')
-        if (opened === null) setBlockedUrl(nativeUrl)
-      }
-      return h('div', { className: 'rd-settingsHostAction', 'data-rd-settings-host-switcher': 'true', 'data-rd-settings-active-host': active.id },
-        h(Menu, {
-          open,
-          anchor: h(Button, {
-            variant: 'outline',
-            className: 'rd-settingsHostButton',
-            onClick: () => { setOpen(value => !value); void store.refreshSources() },
-            'aria-label': `Settings host, ${active.label}${active.id === LOCAL_SOURCE_ID ? '' : `, ${active.state}`}`,
-            'data-rd-settings-host-filter-button': 'true',
-          },
-            active.id !== LOCAL_SOURCE_ID && h('span', { className: `rd-stateDot rd-state-${active.state}`, 'aria-hidden': 'true' }),
-            h('span', { className: 'rd-settingsHostButtonText' }, active.label),
-            h(IconChevronDownOutline14, { size: 14 })
-          ),
-          items,
-          selectedId: active.id,
-          onSelect: selectHost,
-          onClose: () => setOpen(false),
-        }),
-        blockedUrl && h('a', { className: 'rd-settingsNativeUrl', href: blockedUrl, target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, 'Open remote DSH')
-      )
-    }
-
     function SettingsSection() {
       const sources = useRemote(s => s.sources)
       const [message, setMessage] = useState('')
@@ -3359,11 +3297,6 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         id: 'remote-desktop-overlay',
         order: 100,
       }, RemoteOverlay))
-      ctx.slots.inject('settings.action', () => ctx.slots.register({
-        name: 'settings.action',
-        id: 'remote-desktop-host',
-        order: 20,
-      }, SettingsHostAction))
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section',
         id: 'remote-desktop',

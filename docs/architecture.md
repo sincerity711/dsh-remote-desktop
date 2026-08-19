@@ -152,10 +152,7 @@ Remote workspace creation must not fall back to local workspace creation after r
 
 ## Settings flow
 
-The local bundle keeps the official `ui-settings-general` shell. Remote Desktop extends it through official slots:
-
-- `settings.action`: a Host selector rendered in the official header action area. Selecting a connected remote host opens that host's native DSH page at the forwarded proxy origin.
-- `settings.section`: a `Remote Desktop` page that lists SSH hosts, shows connection state, and exposes Connect, Disconnect, and Open native DSH actions.
+The local bundle keeps the official `ui-settings-general` shell. Remote Desktop extends it through the official `settings.section` slot with a `Remote Desktop` page that lists SSH hosts, shows connection state, and exposes Connect, Disconnect, and Open native DSH actions.
 
 The native remote Settings URL is derived from the iframe URL by removing `?dshRemoteDesktop=1` and the token hash. Remote Settings are not embedded in the local modal and do not receive the iframe token.
 
@@ -166,7 +163,7 @@ This project uses “fork” narrowly: copied upstream source with a recorded ba
 | Surface | Status | Upstream baseline | Why |
 | --- | --- | --- | --- |
 | `ui-workspace` browser/picker/tree/rows/store/locales | **Vendored fork** | `deepseek-harness` commit `9f8359451a6f8df17f65bc2c398810ac19bdfc8a`, package `packages/client/ui-workspace`; recorded in `packages/local/upstream/ui-workspace/UPSTREAM.md` | The sidebar must look and behave like official DSH while accepting source-qualified remote rows, host markers, remote open routing, and remote-action guards. |
-| Settings Host selector and Remote Desktop section | **Official-slot extension, not a fork** | `settings.action` and `settings.section` from `ui-settings-general` | The official Settings shell stays enabled; Remote Desktop contributes a header action and one settings page using official primitives and design tokens. |
+| Remote Desktop settings section | **Official-slot extension, not a fork** | `settings.section` from `ui-settings-general` | The official Settings shell stays enabled; Remote Desktop contributes one settings page using official primitives and design tokens. |
 | Workspace Add splitter | **Plugin-owned replacement/extension, not a source fork** | Uses official directory-flow slot and UI primitives | The first screen must split Local and Remote. Local delegates back to the official current-instance directory flow; Remote is plugin-owned. |
 | Local server API, SSH tunnel/proxy, remote store, iframe overlay, companion bridge | **Custom dsh-remote-desktop code** | None | These implement remote host lifecycle and iframe control; they are not forks of DSH packages. |
 | Companion sidebar-hiding CSS | **Custom compatibility shim** | None | It adapts the embedded remote app frame in iframe mode and must remain narrowly scoped. |

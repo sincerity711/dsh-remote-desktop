@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-test('settings extension uses the official shell slots and design primitives', async () => {
+test('settings extension keeps the official shell and contributes only its section', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
 
@@ -10,12 +10,10 @@ test('settings extension uses the official shell slots and design primitives', a
   assert.doesNotMatch(client, /function SettingsShell/)
   assert.doesNotMatch(client, /name: 'sidebar.settings'/)
   assert.doesNotMatch(client, /rd-settingsOverlay/)
-  assert.match(client, /ctx\.slots\.inject\('settings\.action'/)
-  assert.match(client, /function SettingsHostAction/)
-  assert.match(client, /data-rd-settings-host-switcher/)
-  assert.match(client, /className: 'rd-settingsHostButton'/)
-  assert.match(client, /h\(Menu, \{[\s\S]*rd-settingsHostButton/)
-  assert.match(client, /h\(Button, \{[\s\S]*rd-settingsHostButton/)
+  assert.doesNotMatch(client, /ctx\.slots\.inject\('settings\.action'/)
+  assert.doesNotMatch(client, /function SettingsHostAction/)
+  assert.doesNotMatch(client, /data-rd-settings-host-switcher/)
+  assert.match(client, /ctx\.slots\.inject\('settings\.section'/)
 })
 
 test('remote desktop settings section lists hosts and opens native remote pages', async () => {

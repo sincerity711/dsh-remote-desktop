@@ -24,10 +24,7 @@ const requiredClientNeedles = [
   'data-rd-local-session-id',
   'data-rd-remote-session-id',
   'data-rd-workspace-source-kind',
-  "ctx.slots.inject('settings.action'",
-  'data-rd-settings-host-switcher',
-  'data-rd-settings-active-host',
-  'rd-settingsHostButton',
+  "ctx.slots.inject('settings.section'",
   'data-rd-settings-open-native',
   'data-rd-settings-native-link',
   'nativeRemoteUrl',
@@ -49,6 +46,15 @@ const upstreamHash = '9f8359451a6f8df17f65bc2c398810ac19bdfc8a'
 if (!upstreamRecord.includes(upstreamHash)) throw new Error('ui-workspace upstream record missing pinned hash')
 if (!upstreamPatch.includes('remote host marker')) throw new Error('ui-workspace remote patch summary missing marker delta')
 if (/ui-settings-general[\s\S]*disabled: true/.test(localPatch)) throw new Error('ui-settings-general should remain enabled; extend official settings slots instead')
+
+const forbiddenSettingsActionNeedles = [
+  "ctx.slots.inject('settings.action'",
+  'data-rd-settings-host-switcher',
+  'rd-settingsHostButton',
+]
+for (const needle of forbiddenSettingsActionNeedles) {
+  if (localClient.includes(needle)) throw new Error(`settings header host selector remains: ${needle}`)
+}
 
 const forbiddenSettingsIframeNeedles = [
   'function withSettingsView',
