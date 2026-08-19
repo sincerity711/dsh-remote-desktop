@@ -203,11 +203,11 @@ async function runBrowserChecks() {
     await page.goto(localBase, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(8000)
     await dismissTopLevelBlockingUi(page)
-    await item('P0-SIDEBAR-001', 'project list visible with host badge', async () => {
+    await item('P0-SIDEBAR-001', 'project list visible with host marker', async () => {
       await page.locator('[data-rd-local-session-id]').first().waitFor({ timeout: 10000 })
-      await page.locator(`[data-rd-host-badge="${sshDest}"]`).first().waitFor({ timeout: 10000 })
+      await page.locator(`[data-rd-host-marker="${sshDest}"]`).first().waitFor({ timeout: 10000 })
       await page.screenshot({ path: join(artifactDir, '01-local-ready.png'), fullPage: true })
-      return `project-first sidebar shows local sessions and ${sshDest} host badge`
+      return `project-first sidebar shows local sessions and ${sshDest} host marker`
     })
     await item('P0-ARTIFACT-001', 'screenshots initial', async () => {
       if (!existsSync(join(artifactDir, '01-local-ready.png'))) throw new Error('01-local-ready.png missing')
@@ -219,7 +219,7 @@ async function runBrowserChecks() {
       return 'local session row visible'
     })
     await item('P0-SIDEBAR-004', 'workspace header does not switch active target', async () => {
-      const header = page.locator(`[data-rd-workspace-source-kind="remote"] .rd-workspaceHeader`).first()
+      const header = page.locator(`[data-rd-workspace-source-kind="remote"]`).first()
       await header.click()
       await page.waitForTimeout(500)
       const overlayActive = await page.locator('[data-rd-overlay-active="true"]').count()
@@ -399,11 +399,12 @@ async function runBrowserChecks() {
       return result.reason
     })
     await item('P0-SIDEBAR-003', 'active source indication remote', async () => {
-      const body = await page.locator('body').innerText()
-      if (!body.includes(sshDest)) throw new Error('remote host badge text missing')
-      const badges = await page.locator(`[data-rd-host-badge="${sshDest}"]`).count()
-      if (badges < 1) throw new Error('remote host badge missing')
-      return `${sshDest} host badge visible`
+      const markers = page.locator(`[data-rd-host-marker="${sshDest}"]`)
+      const markerCount = await markers.count()
+      if (markerCount < 1) throw new Error('remote host marker missing')
+      const markerTitle = await markers.first().getAttribute('title')
+      if (markerTitle !== sshDest) throw new Error(`remote host marker title mismatch: ${markerTitle}`)
+      return `${sshDest} host marker visible`
     }, { duplicateOk: true })
     await item('P0-SWITCH-003', 'remote to local', async () => {
       await page.locator('[data-rd-local-session-id]').first().click()

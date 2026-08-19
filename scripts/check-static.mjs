@@ -4,12 +4,17 @@ import { readFile } from 'node:fs/promises'
 const localClient = await readFile('packages/local/lib/client.js', 'utf8')
 const companionClient = await readFile('packages/companion/lib/client.js', 'utf8')
 const localPatch = await readFile('packages/local/cordis.patch.yml', 'utf8')
+const upstreamRecord = await readFile('packages/local/upstream/ui-workspace/UPSTREAM.md', 'utf8')
+const upstreamPatch = await readFile('packages/local/upstream/ui-workspace/remote-desktop.patch', 'utf8')
 
 const requiredClientNeedles = [
   'ctx.provide(\'remoteDesktop\'',
   'openRemoteSession',
   'openLocalSession',
-  'data-rd-sidebar\': \'official-style-fork\'',
+  'const OfficialWorkspace = (() =>',
+  '9f8359451a6f8df17f65bc2c398810ac19bdfc8a',
+  'OfficialWorkspaceForkBrowser',
+  'data-rd-host-marker',
   'var(--dsw-specific-sidebar-fill)',
   'var(--dsw-alias-interactive-bg-hover)',
   "position: 'fixed'",
@@ -18,7 +23,6 @@ const requiredClientNeedles = [
   'data-rd-overlay-host',
   'data-rd-local-session-id',
   'data-rd-remote-session-id',
-  'data-rd-host-badge',
   'data-rd-workspace-source-kind',
   'sidebar.settings',
   'data-rd-settings-host-switcher',
@@ -38,6 +42,11 @@ const requiredClientNeedles = [
 for (const needle of requiredClientNeedles) {
   if (!localClient.includes(needle)) throw new Error(`packages/local/lib/client.js missing ${needle}`)
 }
+
+
+const upstreamHash = '9f8359451a6f8df17f65bc2c398810ac19bdfc8a'
+if (!upstreamRecord.includes(upstreamHash)) throw new Error('ui-workspace upstream record missing pinned hash')
+if (!upstreamPatch.includes('remote host marker')) throw new Error('ui-workspace remote patch summary missing marker delta')
 
 const forbiddenSettingsIframeNeedles = [
   'function withSettingsView',
@@ -93,6 +102,11 @@ const forbiddenSidebarInline = [
   'rgba(57,100,254,.14)',
   'Remote: ${source.label}',
   'rd-sourceHeader',
+  'rd-browser',
+  'rd-workspaceHeader',
+  'rd-sessionRow',
+  'data-rd-sidebar\': \'official-style-fork\'',
+  'data-rd-host-badge',
 ]
 for (const needle of forbiddenSidebarInline) {
   if (localClient.includes(needle)) throw new Error(`legacy inline sidebar style remains: ${needle}`)

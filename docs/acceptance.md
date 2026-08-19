@@ -101,9 +101,9 @@ The script must run non-interactively. It may fail early when key-only SSH is un
 The script must drive a real browser through Playwright or an equivalent browser automation layer.
 
 1. Open the local dsh page.
-2. Assert the unified left sidebar shows local project rows and a remote project row with a `win-wsl` host badge.
-3. Assert the remote host appears connected in Remote Desktop settings and remote rows show a host badge.
-4. Assert a remote session row is visible under the remote project row with a `win-wsl` host badge.
+2. Assert the unified left sidebar shows local project rows and a remote project row with a `win-wsl` host marker.
+3. Assert the remote host appears connected in Remote Desktop settings and remote project rows show a host marker.
+4. Assert a remote session row is visible under the remote project row with a `win-wsl` host marker.
 5. Click the remote project header and assert it does not activate the remote iframe.
 6. Click the remote session row.
 7. Assert the remote iframe is visible.
@@ -177,10 +177,10 @@ A failing run must exit non-zero and include the failing item id in stdout.
 ### SIDEBAR: unified left sidebar
 
 - **P0-SIDEBAR-001 source list visible**
-  PASS: the top-level left sidebar shows project rows, and remote project rows carry a `win-wsl` host badge.
+  PASS: the top-level left sidebar shows project rows, and remote project rows carry a `win-wsl` host marker.
 
 - **P0-SIDEBAR-002 remote session visible**
-  PASS: the remote sentinel workspace/session is visible as a project row with a `win-wsl` host badge.
+  PASS: the remote sentinel workspace/session is visible as a project row with a `win-wsl` host marker.
 
 - **P0-SIDEBAR-003 active source indication**
   PASS: after clicking a remote session row, that remote session row has an active/selected indication; after clicking a local session row, the local session row has an active/selected indication.

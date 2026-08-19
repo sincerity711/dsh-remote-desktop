@@ -1,0 +1,11 @@
+Remote Desktop patch summary for official ui-workspace baseline 9f8359451a6f8df17f65bc2c398810ac19bdfc8a:
+
+- Build the workspace tree from both local `ctx.workspaces/ctx.sessions` and connected remote snapshots.
+- Use source-qualified workspace/session keys so local and remote ids cannot collide.
+- Route local session row opens to `ctx.sessions.open` and remote session row opens to `store.openRemote`.
+- Keep workspace row clicks as expand/collapse only.
+- Render one compact remote host label plus colored dot on remote project rows; host ids map deterministically to colors.
+- Hide unsupported remote mutation actions in this release.
+- Route the Add workspace affordance to `WorkspaceAddSplitter` so Local and Remote remain separate.
+
+This file intentionally records the small maintained delta instead of carrying a generated monolithic diff while `packages/local/lib/client.js` remains hand-bundled JavaScript. When the client is split into fork modules, replace this summary with `git diff --no-index baseline fork` output.

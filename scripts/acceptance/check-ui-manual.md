@@ -4,7 +4,7 @@ Run this checklist when layout, iframe container styling, sidebar shell behavior
 
 - [ ] The local unified sidebar remains the only expanded left sidebar in the top-level page.
 - [ ] Local and remote workspaces appear as project rows, not grouped by source machine.
-- [ ] Remote project rows show a readable host badge and status dot.
+- [ ] Remote project rows show a readable host marker and status dot.
 - [ ] Remote active state is visually obvious after opening a remote session.
 - [ ] Local active state is visually obvious after switching back.
 - [ ] No remote overlay remains on top of the local main area after switching to Local.
