@@ -471,7 +471,8 @@ window.__ModuleLoader__.load({
       const [activeHostId, setActiveHostIdState] = useState('local')
       const active = rows.find(row => row.id === activeId)?.id ?? rows[0]?.id
       const setActiveHostId = (id) => { setSettingsHost(id); setActiveHostIdState(id) }
-      const close = () => { setOpen(false); setActiveId(undefined) }
+      const close = () => { setSettingsHost('local'); setActiveHostIdState('local'); setOpen(false); setActiveId(undefined) }
+      useEffect(() => () => setSettingsHost('local'), [])
       useEffect(() => {
         if (!open) return
         const onKeyDown = (event) => { if (event.key === 'Escape') close() }
