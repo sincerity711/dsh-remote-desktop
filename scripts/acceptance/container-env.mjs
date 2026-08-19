@@ -25,6 +25,8 @@ const canaryHome = join(repoRoot, '.acceptance', 'canary-local-home')
 const canaryWorkspace = join(repoRoot, '.acceptance', 'canary-workspaces', 'local')
 const remotePort = 30800
 const ollamaModel = process.env.DSH_RD_OLLAMA_MODEL ?? 'minicpm-v4.6:1b'
+const ollamaApiKeyEnv = 'DSH_RD_OLLAMA_API_KEY'
+const ollamaApiKey = process.env[ollamaApiKeyEnv] ?? 'ollama-canary-dummy-key'
 const localOllamaBaseUrl = (process.env.DSH_RD_OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434').replace(/\/+$/, '')
 const containerBin = process.env.CONTAINER_CLI ?? 'container'
 const remotes = [
@@ -178,7 +180,7 @@ ${ollamaSettings(ollamaBaseUrl)}SETTINGS
     fi
     pnpm rebuild node-pty >/tmp/dsh-rd-canary-node-pty.log 2>&1 || true
     node --input-type=module -e ${sh(verifyOllama)}
-    nohup env DSH_HOME=~/.dsh-remote-desktop-canary DSH_TELEMETRY_DISABLED=1 dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-rd-canary.log 2>&1 & echo $! > /tmp/dsh-rd-canary.pid
+    nohup env DSH_HOME=~/.dsh-remote-desktop-canary DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-rd-canary.log 2>&1 & echo $! > /tmp/dsh-rd-canary.pid
   `, { timeoutMs: 300000 })
   await waitRemoteDsh(remote.id)
   const workspace = await remoteRpc(remote.id, 'workspace.create', { path: '/tmp/dsh-rd-canary' })
@@ -199,7 +201,7 @@ async function setupLocal(seed) {
   const port = await freePort()
   const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`], {
     cwd: harnessRoot,
-    env: { ...process.env, DSH_HOME: canaryHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: sshConfig, DSH_REMOTE_DESKTOP_SKIP_SETUP: '1' },
+    env: { ...process.env, DSH_HOME: canaryHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: sshConfig, DSH_REMOTE_DESKTOP_SKIP_SETUP: '1', [ollamaApiKeyEnv]: ollamaApiKey },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   started.push(child)
@@ -269,7 +271,7 @@ async function ensureContainers() {
 }
 
 function ollamaSettings(baseUrl) {
-  return `agent-default-model:\n  provider: ollama\n  model: ${JSON.stringify(ollamaModel)}\nllm-pi-ai:\n  providers:\n    ollama:\n      displayName: Local Ollama\n      api: openai-completions\n      baseURL: ${baseUrl}\n      models:\n        - id: ${JSON.stringify(ollamaModel)}\n          name: MiniCPM V 4.6 1B\n`
+  return `agent-default-model:\n  provider: ollama\n  model: ${JSON.stringify(ollamaModel)}\nllm-pi-ai:\n  providers:\n    ollama:\n      displayName: Local Ollama\n      api: openai-completions\n      apiKeyEnv: ${ollamaApiKeyEnv}\n      baseURL: ${baseUrl}\n      models:\n        - id: ${JSON.stringify(ollamaModel)}\n          name: MiniCPM V 4.6 1B\n`
 }
 
 async function assertOllamaDefault(models, owner) {

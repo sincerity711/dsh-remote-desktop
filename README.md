@@ -128,7 +128,7 @@ ollama pull minicpm-v4.6:1b
 npm run acceptance:container:canary
 ```
 
-The canary requires the host Ollama service and configures `minicpm-v4.6:1b` as the routable default model for the local DSH instance and both remote DSH instances. Set `DSH_RD_OLLAMA_MODEL` or `DSH_RD_OLLAMA_BASE_URL` to override the model or host endpoint.
+The canary requires the host Ollama service and configures `minicpm-v4.6:1b` as the routable default model for the local DSH instance and both remote DSH instances. Its isolated processes also receive `DSH_RD_OLLAMA_API_KEY=ollama-canary-dummy-key`, because the OpenAI-compatible client requires a credential even when the local Ollama endpoint does not validate it. Set `DSH_RD_OLLAMA_MODEL`, `DSH_RD_OLLAMA_BASE_URL`, or `DSH_RD_OLLAMA_API_KEY` to override these canary values.
 
 The Apple container remotes stay running until explicitly stopped:
 

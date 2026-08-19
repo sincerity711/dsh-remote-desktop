@@ -2,7 +2,7 @@
 
 Local controller plugin for Remote Desktop on DeepSeek Harness Web.
 
-It discovers SSH hosts, creates loopback tunnels/proxies, contributes the Remote Desktop Settings section, and replaces the workspace sidebar with a unified local/remote workspace browser.
+It discovers SSH hosts, creates loopback tunnels/proxies, contributes an official-style Remote Desktop Settings section, and replaces the workspace sidebar with a unified local/remote workspace browser. Remote blank sessions preserve the Host's provisional state so the official browser labels the current one New Session until its first prompt.
 
 ## Install
 

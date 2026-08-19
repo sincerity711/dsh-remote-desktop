@@ -2787,21 +2787,38 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       return `${Math.floor(hours / 24)}d`
     }
 
-    const REMOTE_OVERLAY_Z_INDEX = 2147483000
+    const REMOTE_OVERLAY_Z_INDEX = 900
 
     function installCss() {
       if (document.querySelector('style[data-dsh-remote-desktop-sidebar]')) return () => {}
       const style = document.createElement('style')
       style.setAttribute('data-dsh-remote-desktop-sidebar', '')
       style.textContent = `
-        .rd-settingsNativeUrl { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .rd-settingsSection { display: flex; flex-direction: column; gap: 12px; max-width: 720px; color: var(--dsw-alias-label-primary); }
+        .rd-settingsTitle { margin: 0; color: var(--dsw-alias-label-primary); font-size: 16px; font-weight: 500; line-height: 24px; }
+        .rd-settingsIntro { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 14px; line-height: 22px; }
+        .rd-settingsHeadingRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+        .rd-settingsHeading { margin: 0; color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 500; line-height: 22px; }
+        .rd-settingsCount { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+        .rd-settingsEmpty { padding: 20px 14px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 12px; color: var(--dsw-alias-label-tertiary); font-size: 13px; line-height: 20px; text-align: center; }
+        .rd-settingsHosts { display: flex; flex-direction: column; gap: 8px; }
+        .rd-settingsHost { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: transparent; }
+        .rd-settingsHostHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .rd-settingsIdentity { min-width: 0; }
+        .rd-settingsHostName { overflow: hidden; color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 500; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+        .rd-settingsHostAddress { overflow: hidden; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+        .rd-settingsHostState { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 22px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+        .rd-settingsActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .rd-settingsNativeUrl { display: block; max-width: 100%; overflow: hidden; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+        .rd-settingsFeedback { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+        .rd-settingsFeedbackError { color: var(--dsw-alias-state-error-primary); }
         .rd-pickerMenu { position: fixed; z-index: 2147482600; min-width: 260px; max-width: min(360px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); }
-        .rd-addChoiceGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-        .rd-addChoice { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 92px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
+        .rd-addChoiceGrid { display: flex; flex-direction: column; gap: 8px; }
+        .rd-addChoice { box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 10px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
         .rd-addChoice:hover { background: var(--dsw-alias-interactive-bg-hover); }
         .rd-addChoice[disabled] { opacity: .55; cursor: default; }
-        .rd-addChoiceIcon { flex: none; color: var(--dsw-alias-label-secondary); }
-        .rd-addChoiceTitle { display: block; font-size: 14px; line-height: 20px; font-weight: 520; }
+        .rd-addChoiceIcon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
+        .rd-addChoiceTitle { display: block; font-size: 14px; line-height: 22px; font-weight: 500; }
         .rd-addChoiceDesc { display: block; margin-top: 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
         .rd-setupField { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
         .rd-setupLabel { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
@@ -2809,7 +2826,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         .rd-hostButtonLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
         .rd-setupHint { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; margin-top: 8px; }
         .rd-addError { color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px; white-space: pre-wrap; margin-top: 8px; }
-        .rd-browsePanel { margin-top: 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-specific-sidebar-fill); overflow: hidden; }
+        .rd-browsePanel { margin-top: 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: transparent; overflow: hidden; }
         .rd-browseToolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
         .rd-breadcrumbs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
         .rd-breadcrumbButton { flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); padding: 3px 6px; font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; }
@@ -2817,13 +2834,14 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         .rd-breadcrumbSep { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
         .rd-hiddenToggle { flex: none; }
         .rd-directoryList { max-height: min(320px, 42vh); overflow-y: auto; padding: 6px; }
-        .rd-directoryRow { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 34px; border: none; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); padding: 0 8px; font: inherit; text-align: left; cursor: pointer; }
+        .rd-directoryRow { box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; min-height: 36px; border: none; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); padding: 0 8px; font: inherit; font-size: 14px; line-height: 22px; text-align: left; cursor: pointer; }
         .rd-directoryRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
         .rd-directoryName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .rd-currentPath { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; margin-top: 8px; word-break: break-all; }
         .rd-browseStatus { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; padding: 18px 10px; text-align: center; }
         .rd-browseStatusError { color: var(--dsw-alias-state-error-primary); }
         @keyframes rd-row-in { from { opacity: 0; } }
+        @media (max-width: 620px) { .rd-settingsHostHead { align-items: stretch; flex-direction: column; gap: 4px; } .rd-settingsActions > * { flex: 1 1 auto; } .rd-browseToolbar { align-items: stretch; flex-direction: column; } .rd-hiddenToggle { align-self: flex-start; } }
         @media (prefers-reduced-motion: reduce) { .rd-sessionNode { animation: none; } }
       `
       document.head.appendChild(style)
@@ -2863,7 +2881,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         rawSessionId,
         remoteMarker,
         displayTitle: titleOfSession(row),
-        blank: false,
+        blank: Boolean(row.blank ?? row.projections?.values?.sessionListMetadata?.blank),
         running: Boolean(row.running),
         runningSubagentCount: Number(row.runningSubagentCount || 0),
         completed: Boolean(row.completed),
@@ -3464,42 +3482,63 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
 
     function SettingsSection() {
       const sources = useRemote(s => s.sources)
-      const [message, setMessage] = useState('')
+      const [pendingHost, setPendingHost] = useState(null)
+      const [feedback, setFeedback] = useState(null)
       useEffect(() => { void store.refreshSources() }, [])
       const connect = async (id) => {
-        try { await store.connect(id); setMessage('Connected') } catch (e) { setMessage(e.message || String(e)) }
+        setPendingHost(id)
+        setFeedback(null)
+        try { await store.connect(id); setFeedback({ id, tone: 'success', text: 'Connected.' }) } catch (e) { setFeedback({ id, tone: 'error', text: e.message || String(e) }) } finally { setPendingHost(null) }
       }
       const disconnect = async (id) => {
-        try { await store.disconnect(id); setMessage('Disconnected') } catch (e) { setMessage(e.message || String(e)) }
+        setPendingHost(id)
+        setFeedback(null)
+        try { await store.disconnect(id); setFeedback({ id, tone: 'success', text: 'Disconnected.' }) } catch (e) { setFeedback({ id, tone: 'error', text: e.message || String(e) }) } finally { setPendingHost(null) }
       }
       const openNative = (source) => {
         if (!source.iframeUrl) return
         const nativeUrl = nativeRemoteUrl(source.iframeUrl)
         const opened = window.open(nativeUrl, '_blank', 'noopener,noreferrer')
-        if (opened === null) setMessage(`Your browser blocked ${source.label}. Use the link in this host row to open it.`)
+        if (opened === null) setFeedback({ id: source.id, tone: 'error', text: `Your browser blocked ${source.label}. Use the link in this Host row to open it.` })
       }
-      return h('div', { style: styles.settings, 'data-rd-settings-section': 'true' },
-        h('h2', null, 'Remote Desktop'),
-        h('p', null, 'Hosts come from this machine\'s SSH config. Installed remote dsh web profiles connect automatically; Connect installs the companion and starts the remote web profile when needed.'),
-        message && h('div', { style: message.toLowerCase().includes('error') || message.toLowerCase().includes('required') ? styles.error : styles.hint }, message),
-        h('h3', null, 'SSH hosts'),
-        sources.length === 0 && h('div', { style: styles.hint }, 'No concrete Host entries found in ~/.ssh/config.'),
-        sources.map(source => h('div', { key: source.id, style: styles.card, 'data-rd-settings-source-id': source.id },
-          h('div', { style: styles.hostRow },
-            h('strong', null, source.label),
-            h('span', { style: styles.hostStatus, 'data-rd-settings-host-state': source.state }, source.state === 'connected' ? 'connected' : 'not connected')
-          ),
-          h('div', { style: styles.hint }, [source.sshUser, source.sshHost].filter(Boolean).join('@') || source.sshAlias || source.id),
-          source.error && h('div', { style: styles.error }, source.error),
-          h('div', { style: styles.actions },
-            h(Button, { variant: 'primary', disabled: source.state !== 'connected' || !source.iframeUrl, 'data-rd-settings-open-native': source.id, onClick: () => openNative(source) }, `Open ${source.label} DSH`),
-            h(Button, { variant: 'outline', 'data-rd-settings-connect': source.id, onClick: () => void connect(source.id) }, 'Connect'),
-            h(Button, { variant: 'outline', 'data-rd-settings-disconnect': source.id, onClick: () => void disconnect(source.id) }, 'Disconnect')
-          ),
-          source.state === 'connected' && source.iframeUrl
-            ? h('a', { className: 'rd-settingsNativeUrl', href: nativeRemoteUrl(source.iframeUrl), target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, nativeRemoteUrl(source.iframeUrl))
-            : h('div', { className: 'rd-settingsNativeUrl', 'data-rd-settings-native-placeholder': 'true' }, 'Connect to install the remote companion and create a forwarded DSH Web URL for this host.')
-        ))
+      return h('section', { className: 'rd-settingsSection', 'data-rd-settings-section': 'true' },
+        h('h2', { className: 'rd-settingsTitle' }, 'Remote Desktop'),
+        h('p', { className: 'rd-settingsIntro' }, 'Use DSH on SSH Hosts from the same Workspace browser. Connected Hosts open in place; native DSH remains available in a separate tab.'),
+        h('div', { className: 'rd-settingsHeadingRow' },
+          h('h3', { className: 'rd-settingsHeading' }, 'SSH Hosts'),
+          h('span', { className: 'rd-settingsCount' }, `${sources.length} ${sources.length === 1 ? 'Host' : 'Hosts'}`)
+        ),
+        sources.length === 0 && h('div', { className: 'rd-settingsEmpty' }, 'No concrete Host entries were found in ~/.ssh/config.'),
+        h('div', { className: 'rd-settingsHosts' }, sources.map(source => {
+          const connected = source.state === 'connected'
+          const busy = pendingHost === source.id
+          const stateText = connected ? 'Connected' : source.state === 'connecting' ? 'Connecting' : source.state === 'error' ? 'Connection failed' : 'Not connected'
+          const dotState = connected ? 'done' : source.state === 'connecting' ? 'ongoing' : source.state === 'error' ? 'error' : 'warning'
+          const address = [source.sshUser, source.sshHost].filter(Boolean).join('@') || source.sshAlias || source.id
+          return h('article', { key: source.id, className: 'rd-settingsHost', 'data-rd-settings-source-id': source.id },
+            h('div', { className: 'rd-settingsHostHead' },
+              h('div', { className: 'rd-settingsIdentity' },
+                h('div', { className: 'rd-settingsHostName' }, source.label),
+                h('div', { className: 'rd-settingsHostAddress' }, address)
+              ),
+              h('span', { className: 'rd-settingsHostState', 'data-rd-settings-host-state': source.state },
+                h(StateDot, { state: dotState, size: 8 }),
+                stateText
+              )
+            ),
+            source.error && h('p', { className: 'rd-settingsFeedback rd-settingsFeedbackError', role: 'alert' }, source.error),
+            feedback?.id === source.id && h('p', { className: `rd-settingsFeedback${feedback.tone === 'error' ? ' rd-settingsFeedbackError' : ''}`, role: feedback.tone === 'error' ? 'alert' : 'status' }, feedback.text),
+            h('div', { className: 'rd-settingsActions' },
+              connected
+                ? h(Button, { variant: 'primary', disabled: busy || !source.iframeUrl, 'data-rd-settings-open-native': source.id, onClick: () => openNative(source) }, `Open ${source.label}`)
+                : h(Button, { variant: 'primary', disabled: busy, 'data-rd-settings-connect': source.id, onClick: () => void connect(source.id) }, busy ? 'Connecting…' : 'Connect'),
+              connected && h(Button, { variant: 'outline', disabled: busy, 'data-rd-settings-disconnect': source.id, onClick: () => void disconnect(source.id) }, busy ? 'Disconnecting…' : 'Disconnect')
+            ),
+            connected && source.iframeUrl
+              ? h('a', { className: 'rd-settingsNativeUrl', href: nativeRemoteUrl(source.iframeUrl), target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, nativeRemoteUrl(source.iframeUrl))
+              : h('div', { className: 'rd-settingsNativeUrl', 'data-rd-settings-native-placeholder': 'true' }, 'Connect to create a forwarded DSH Web URL for this Host.')
+          )
+        }))
       )
     }
 
@@ -3592,11 +3631,6 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       error: { color: 'var(--dsw-alias-state-error-primary)', fontSize: 12, padding: '6px 8px', whiteSpace: 'pre-wrap' },
       overlay: { position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: REMOTE_OVERLAY_Z_INDEX, isolation: 'isolate', background: 'var(--dsw-alias-bg-base)', pointerEvents: 'auto' },
       iframe: { width: '100%', height: '100%', border: 0, background: 'transparent' },
-      settings: { padding: 16, maxWidth: 720, font: '14px system-ui, sans-serif' },
-      card: { border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 10, padding: 10, margin: '8px 0' },
-      actions: { display: 'flex', gap: 8, marginTop: 8 },
-      hostRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-      hostStatus: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12 },
     }
 
     return module.exports

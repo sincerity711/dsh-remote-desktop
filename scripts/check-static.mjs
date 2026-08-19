@@ -22,7 +22,7 @@ const requiredClientNeedles = [
   'var(--dsw-specific-sidebar-fill)',
   'var(--dsw-alias-interactive-bg-hover)',
   "position: 'fixed'",
-  'const REMOTE_OVERLAY_Z_INDEX = 2147483000',
+  'const REMOTE_OVERLAY_Z_INDEX = 900',
   'ReactDOM.createPortal',
   'data-rd-overlay-host',
   'data-rd-local-session-id',
@@ -157,7 +157,7 @@ const requiredContainerScripts = [
 for (const name of requiredContainerScripts) {
   if (typeof packageJson.scripts?.[name] !== 'string') throw new Error(`package.json missing ${name}`)
 }
-for (const needle of ['remote-a', 'remote-b', 'minicpm-v4.6:1b', 'DSH_REMOTE_DESKTOP_SSH_CONFIG', 'stateDir', 'containerBin']) {
+for (const needle of ['remote-a', 'remote-b', 'minicpm-v4.6:1b', 'DSH_RD_OLLAMA_API_KEY', 'ollama-canary-dummy-key', 'apiKeyEnv: ${ollamaApiKeyEnv}', 'DSH_REMOTE_DESKTOP_SSH_CONFIG', 'stateDir', 'containerBin']) {
   if (!containerEnv.includes(needle)) throw new Error(`Apple container acceptance helper missing ${needle}`)
 }
 for (const needle of ['dsh-rd-debs', 'javascript-node:22-bookworm']) {

@@ -56,6 +56,8 @@ try {
       const workspace = await remoteRpc(remote, 'workspace.create', { path: remote.sentinel })
       const session = await remoteRpc(remote, 'session.create', { workspaceId: workspace.workspace.workspaceId })
       remote.sessionId = session.sessionId
+      await remoteRpc(remote, 'session.prompt', { sessionId: remote.sessionId, mode: 'queue', content: [{ type: 'text', text: `Acceptance fixture for ${remote.id}.` }] })
+      await remoteRpc(remote, 'session.cancel', { sessionId: remote.sessionId })
     }
     return remotes.map(r => `${r.id}:${r.proxyOrigin}`).join(', ')
   })
@@ -197,7 +199,7 @@ async function settingsUiChecks(page) {
   await item('P1-SETTINGS-002', 'connected statuses shown in UI', async () => {
     for (const remote of remotes) {
       const text = await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).innerText()
-      if (!text.includes('connected')) throw new Error(`${remote.id} status missing: ${text}`)
+      if (!text.toLowerCase().includes('connected')) throw new Error(`${remote.id} status missing: ${text}`)
     }
     return 'connected status visible for both remotes'
   })

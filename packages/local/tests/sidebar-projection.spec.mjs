@@ -37,6 +37,14 @@ test('client sidebar is project-first with a compact remote host marker', async 
   assert.doesNotMatch(client, /data-rd-sidebar['"]?: ['"]official-style-fork/)
 })
 
+test('remote summaries preserve blank state for the official New Session label', async () => {
+  const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+
+  assert.match(client, /blank: Boolean\(row\.blank \?\? row\.projections\?\.values\?\.sessionListMetadata\?\.blank\)/)
+  assert.match(client, /function sessionTitle\(session\)[\s\S]*session\.blank \? "New Session" : session\.displayTitle/)
+  assert.doesNotMatch(client, /blank: false,\n\s*running: Boolean\(row\.running\)/)
+})
+
 
 test('remote workspace and session actions forward through host API', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
@@ -58,6 +66,8 @@ test('remote overlay resends pending opens when the iframe reports ready', async
 
   assert.match(client, /const \{ sources, active, pendingOpen, companionReady \} = remote/)
   assert.match(client, /pendingOpen\?\.nonce, source === undefined \? undefined : companionReady\[source\.id\]/)
+  assert.match(client, /const REMOTE_OVERLAY_Z_INDEX = 900/)
+  assert.doesNotMatch(client, /const REMOTE_OVERLAY_Z_INDEX = 2147483000/)
 })
 
 

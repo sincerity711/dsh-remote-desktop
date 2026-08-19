@@ -53,7 +53,7 @@ For manual validation without browser assertions, start the canary system:
 npm run acceptance:container:canary
 ```
 
-The canary command starts local DSH Web, connects both Apple container remotes, creates recognizable local and remote sessions, writes sentinel files, and prints the local browser URL plus SSH commands. It requires host Ollama with `minicpm-v4.6:1b`, configures that model as the routable default for local and remote sessions, and forwards remote model traffic through the retained host proxy. Seed-text generation may fall back to static fixture text after the model availability check; no hosted model credentials are required. Override the endpoint with `DSH_RD_OLLAMA_BASE_URL` and the model with `DSH_RD_OLLAMA_MODEL`.
+The canary command starts local DSH Web, connects both Apple container remotes, creates recognizable local and remote sessions, writes sentinel files, and prints the local browser URL plus SSH commands. It requires host Ollama with `minicpm-v4.6:1b`, configures that model as the routable default for local and remote sessions, and forwards remote model traffic through the retained host proxy. The isolated local and remote processes receive the dummy `DSH_RD_OLLAMA_API_KEY` required by the OpenAI-compatible client; the default value is `ollama-canary-dummy-key` and is not a hosted credential. Seed-text generation may fall back to static fixture text after the model availability check. Override the endpoint with `DSH_RD_OLLAMA_BASE_URL`, the model with `DSH_RD_OLLAMA_MODEL`, and the dummy credential with `DSH_RD_OLLAMA_API_KEY`.
 
 ## Environment rules
 
