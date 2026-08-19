@@ -14,6 +14,7 @@ This design intentionally separates the work into two stages: first the project-
 - Discover candidate remote hosts from `~/.ssh/config` `Host` entries.
 - Add a global settings Host filter that switches settings between local and connected remote hosts.
 - Keep the Remote Desktop settings page simple and main-host-only.
+- Provide a top-level Add workspace entry that can create/select a workspace on either the local host or a connected remote host.
 - Preserve iframe isolation, per-host tokens, per-host proxy origins, and remote companion validation.
 
 ## Non-goals
@@ -90,6 +91,16 @@ Connection flow:
 6. The companion readiness message marks the host fully connected.
 
 Disconnecting a host kills its SSH process, closes its proxy server, removes active remote state for that host, and hides any active remote overlay.
+
+## Workspace add flow
+
+The upstream Workspace picker exposes a directory-flow child hole for choosing a local directory, but the owner component also owns workspace adoption through `ctx.workspaces.create`. That seam can replace the directory chooser, but it cannot by itself select a remote host or adopt the picked path on a remote DSH instance.
+
+`dsh-remote-desktop` therefore shadows `conversation.hero.workspace` with a remote-aware picker while keeping the implementation inside the plugin. The picker lists local workspaces and connected remote workspaces in one menu. Selecting a local workspace delegates to the owner's `onPick(workspaceId)`. Selecting a remote workspace opens or creates a blank remote session for that workspace and activates the remote iframe overlay.
+
+The picker has one Add workspace entry. It asks for Host and directory path. Local submits call `ctx.workspaces.create({ path })` and then `onPick(created.workspaceId)`. Remote submits call the connected host through `/remote-desktop/api/host-api` with `workspace.create`, refresh the host snapshot, then open or create a blank remote session through `session.create`. Disconnected hosts are not offered as remote creation targets; the Settings page remains the connection entry.
+
+This is intentionally a small first implementation. It does not copy the upstream in-app directory browser for remote hosts. A later stage can add a remote directory browsing flow by adding host-aware browse/list/create directory APIs, but it should keep adoption on the selected host rather than routing local `workspace.create`.
 
 ## Settings Host filter
 
@@ -199,6 +210,7 @@ Host filter selects remote host
 - If a selected settings host is not connected, settings content shows a connection prompt and a Connect action.
 - If remote DSH is reachable but the companion is missing or silent, the host remains not connected with a concise companion error.
 - SSH stderr and detailed proxy errors may be shown in expandable details, not as the primary row label.
+- Add workspace failures stay on the Add workspace dialog and must not silently create a local workspace when a remote host was selected.
 - Remote settings update failures stay scoped to the selected remote host and must not fall back to local writes.
 
 ## Gate levels
@@ -223,6 +235,7 @@ Run after sidebar, connection, overlay, or single-host settings-host changes.
 - Verify clicking a remote session still opens the remote iframe overlay.
 - Verify local to remote to local switching still hides and restores the overlay correctly.
 - Verify Remote Desktop settings lists SSH config hosts and marks the connected host as connected.
+- Verify Add workspace can target the connected remote host and opens a blank remote session for the created workspace.
 
 ### G2: multi-host and host-filter acceptance
 
@@ -235,6 +248,7 @@ Run before release and after host-filter/settings routing changes.
 - Verify the settings Host filter lists local, `win-wsl`, and `xsn` with status dots.
 - Verify selecting a connected remote host renders that host's settings values.
 - Verify selecting a not-connected host renders the not-connected placeholder and does not render local settings as a fallback.
+- Verify the workspace picker lists connected remote workspaces with host labels and does not list disconnected hosts as Add workspace targets.
 
 ### G3: manual visual gate
 
@@ -304,6 +318,10 @@ Add these `dsh-remote-desktop` specs/tests:
   - Routes settings describe/read/update calls to the selected connected host.
   - Does not fall back to local settings on remote errors.
   - Preserves per-host origin/token isolation.
+- `packages/local/tests/workspace-picker.spec.mjs`
+  - Registers a remote-aware `conversation.hero.workspace` picker.
+  - Keeps local workspace creation on the local workspace service.
+  - Routes remote workspace creation and blank-session creation through the selected connected host.
 
 Do not add `deepseek-harness` tests for this plugin-owned route; `dsh-remote-desktop` acceptance owns the copied shell behavior.
 
@@ -322,6 +340,18 @@ Primary repo: `dsh-remote-desktop`.
 - Update P0 acceptance and static checks for the new sidebar.
 
 Stage 1 proves the main UX change: remote workspaces are projects with host badges, not source-machine groups.
+
+### Stage 1.5: remote-aware workspace picker
+
+Repo: `dsh-remote-desktop`.
+
+- Shadow `conversation.hero.workspace` with a plugin-owned picker.
+- List local workspaces and connected remote workspaces in one menu.
+- Add a Host + path Add workspace dialog.
+- Route remote `workspace.create` and `session.create` through the host API proxy.
+- Keep disconnected hosts out of the creation target list.
+
+Stage 1.5 restores a user entry for creating remote workspaces after the sidebar stopped using source-machine grouping.
 
 ### Stage 2: copied settings shell and host-scoped routing
 
