@@ -94,13 +94,7 @@ Disconnecting a host kills its SSH process, closes its proxy server, removes act
 
 ## Workspace add flow
 
-The upstream Workspace picker exposes a directory-flow child hole for choosing a local directory, but the owner component also owns workspace adoption through `ctx.workspaces.create`. That seam can replace the directory chooser, but it cannot by itself select a remote host or adopt the picked path on a remote DSH instance.
-
-`dsh-remote-desktop` therefore shadows `conversation.hero.workspace` with a remote-aware picker while keeping the implementation inside the plugin. The picker lists local workspaces and connected remote workspaces in one menu. Selecting a local workspace delegates to the owner's `onPick(workspaceId)`. Selecting a remote workspace opens or creates a blank remote session for that workspace and activates the remote iframe overlay.
-
-The picker has one Add workspace entry. It asks for Host and directory path. Local submits call `ctx.workspaces.create({ path })` and then `onPick(created.workspaceId)`. Remote submits call the connected host through `/remote-desktop/api/host-api` with `workspace.create`, refresh the host snapshot, then open or create a blank remote session through `session.create`. Disconnected hosts are not offered as remote creation targets; the Settings page remains the connection entry.
-
-This is intentionally a small first implementation. It does not copy the upstream in-app directory browser for remote hosts. A later stage can add a remote directory browsing flow by adding host-aware browse/list/create directory APIs, but it should keep adoption on the selected host rather than routing local `workspace.create`.
+Add workspace behavior is owned by [Workspace Add splitter design](2026-08-19-workspace-add-splitter-design.md). The sidebar and host-filter design only requires that Add workspace can target local or connected remote hosts without falling back to local writes after remote errors.
 
 ## Settings Host filter
 
@@ -319,9 +313,7 @@ Add these `dsh-remote-desktop` specs/tests:
   - Does not fall back to local settings on remote errors.
   - Preserves per-host origin/token isolation.
 - `packages/local/tests/workspace-picker.spec.mjs`
-  - Registers a remote-aware `conversation.hero.workspace` picker.
-  - Keeps local workspace creation on the local workspace service.
-  - Routes remote workspace creation and blank-session creation through the selected connected host.
+  - Covers the Add workspace splitter requirements owned by `2026-08-19-workspace-add-splitter-design.md`.
 
 Do not add `deepseek-harness` tests for this plugin-owned route; `dsh-remote-desktop` acceptance owns the copied shell behavior.
 
@@ -341,17 +333,16 @@ Primary repo: `dsh-remote-desktop`.
 
 Stage 1 proves the main UX change: remote workspaces are projects with host badges, not source-machine groups.
 
-### Stage 1.5: remote-aware workspace picker
+### Stage 1.5: Workspace Add splitter
 
 Repo: `dsh-remote-desktop`.
 
-- Shadow `conversation.hero.workspace` with a plugin-owned picker.
-- List local workspaces and connected remote workspaces in one menu.
-- Add a Host + path Add workspace dialog.
-- Route remote `workspace.create` and `session.create` through the host API proxy.
-- Keep disconnected hosts out of the creation target list.
+- Implement the Add workspace splitter defined in `2026-08-19-workspace-add-splitter-design.md`.
+- Keep Local on the official current-instance workspace add path.
+- Route Remote workspace creation and blank-session opening through the selected connected host.
+- Enable splitter-only behavior inside remote iframes without enabling remote host management there.
 
-Stage 1.5 restores a user entry for creating remote workspaces after the sidebar stopped using source-machine grouping.
+Stage 1.5 restores a user entry for local and remote workspace creation after the sidebar stopped using source-machine grouping.
 
 ### Stage 2: copied settings shell and host-scoped routing
 
