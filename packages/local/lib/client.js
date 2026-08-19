@@ -19,6 +19,10 @@ window.__ModuleLoader__.load({
       window.__dshRemoteDesktopSettingsHost = settingsHostId
     }
 
+    function isHostScopedSettingsApi(pathname) {
+      return pathname.startsWith('/api/settings.') || pathname.startsWith('/api/credentials.') || pathname.startsWith('/api/llm.')
+    }
+
     function installHostApiFetchPatch() {
       if (fetchPatched) return
       fetchPatched = true
@@ -26,7 +30,7 @@ window.__ModuleLoader__.load({
       window.fetch = (input, init) => {
         if (settingsHostId === 'local') return originalFetch(input, init)
         const url = new URL(typeof input === 'string' ? input : input.url, window.location.origin)
-        if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return originalFetch(input, init)
+        if (url.origin !== window.location.origin || !isHostScopedSettingsApi(url.pathname)) return originalFetch(input, init)
         const next = new URL('/remote-desktop/api/host-api', window.location.origin)
         next.searchParams.set('id', settingsHostId)
         next.searchParams.set('path', `${url.pathname}${url.search}`)

@@ -14,5 +14,7 @@ test('remote settings proxy is exposed and selected host API calls are routed', 
   assert.match(client, /installHostApiFetchPatch/)
   assert.match(client, /settingsHostId === 'local'/)
   assert.match(client, /\/remote-desktop\/api\/host-api/)
-  assert.match(client, /url\.pathname\.startsWith\('\/api\/'\)/)
+  assert.match(client, /isHostScopedSettingsApi/)
+  assert.match(client, /\/api\/settings\./)
+  assert.doesNotMatch(client, /url\.pathname\.startsWith\('\/api\/'\)/)
 })

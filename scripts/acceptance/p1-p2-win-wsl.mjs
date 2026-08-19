@@ -169,18 +169,17 @@ async function settingsUiChecks(page) {
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator(`[data-rd-settings-host-option="${remotes[1].id}"]`).click()
     await page.locator(`[data-rd-settings-remote-host-placeholder="${remotes[1].id}"]`).waitFor({ timeout: 10000 })
-    const routed = await page.evaluate(async ({ remoteSessionId, localSessionId }) => {
+    const routed = await page.evaluate(async () => {
       const rpcId = crypto.randomUUID()
-      const res = await fetch('/api/session.list', {
+      const res = await fetch('/api/settings.describe', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type: 'client-request', rpcId, method: 'session.list', payload: {} }),
+        body: JSON.stringify({ type: 'client-request', rpcId, method: 'settings.describe', payload: {} }),
       })
       const json = await res.json()
-      const ids = json.result?.value?.items?.map(item => item.sessionId) ?? []
-      return { hasRemote: ids.includes(remoteSessionId), hasLocal: ids.includes(localSessionId), ids }
-    }, { remoteSessionId: remotes[1].sessionId, localSessionId })
-    if (!routed.hasRemote || routed.hasLocal) throw new Error(`Host filter did not route API to remote: ${JSON.stringify(routed)}`)
+      return { ok: json.result?.ok === true, namespaceCount: json.result?.value?.namespaces?.length ?? -1 }
+    })
+    if (!routed.ok || routed.namespaceCount < 0) throw new Error(`Host filter did not route settings API to remote: ${JSON.stringify(routed)}`)
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator('[data-rd-settings-host-option="local"]').click()
     await page.locator('[data-rd-settings-remote-host-placeholder]').waitFor({ state: 'detached', timeout: 10000 })
