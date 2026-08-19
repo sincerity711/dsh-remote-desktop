@@ -14,5 +14,6 @@ Run this checklist when layout, iframe container styling, sidebar shell behavior
 - [ ] Settings keeps the official modal, rail, spacing, token, and control style.
 - [ ] The Settings Host switcher is at the top of the left rail and clearly shows Local or the selected remote host.
 - [ ] Remote Desktop settings lists SSH config hosts and connected/not connected status.
-- [ ] Selecting a connected remote host embeds that host's own Settings surface and the iframe does not show the remote app sidebar.
+- [ ] Selecting a connected remote host shows an Open native DSH action rather than embedding remote Settings.
+- [ ] The Open native DSH action launches a forwarded remote page without `dshRemoteDesktop=1` or token hash.
 - [ ] Failure messages are understandable without reading terminal logs.

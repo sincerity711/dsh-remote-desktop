@@ -254,7 +254,6 @@ window.__ModuleLoader__.load({
         .rd-settingsOverlay { position: fixed; inset: 0; z-index: 2147482500; display: flex; align-items: center; justify-content: center; }
         .rd-settingsMask { position: absolute; inset: 0; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,.24)); backdrop-filter: var(--dsw-mask-blur, blur(8px)); }
         .rd-settingsPanel { position: relative; z-index: 1; display: flex; width: 800px; height: min(800px, calc(100vh - 48px)); max-width: calc(100vw - 48px); border-radius: 24px; overflow: hidden; background: var(--dsw-alias-bg-layer-2, #fff); box-shadow: var(--dsw-shadow-lv3, 0 10px 40px rgba(0,0,0,.18)); color: var(--dsw-alias-label-primary); }
-        .rd-settingsPanel.rd-settingsRemotePanel { width: 1080px; }
         .rd-settingsNav { flex: none; display: flex; flex-direction: column; gap: 18px; width: 188px; padding: 22px 12px 0; box-sizing: border-box; }
         .rd-settingsTitle { padding: 0 12px; font-size: 16px; line-height: 24px; font-weight: 500; }
         .rd-settingsHostSlot { display: flex; flex-direction: column; gap: 6px; padding: 0 6px; }
@@ -275,12 +274,11 @@ window.__ModuleLoader__.load({
         .rd-settingsClose { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 28px; background: transparent; cursor: pointer; color: inherit; font-size: 18px; }
         .rd-settingsClose:hover { background: var(--dsw-alias-interactive-bg-hover); }
         .rd-settingsOptions { flex: 1; min-height: 0; padding: 0 24px 24px; overflow-y: auto; }
-        .rd-settingsOptions.rd-settingsRemoteOptions { padding: 0; overflow: hidden; }
-        .rd-settingsRemoteFrame { display: block; width: 100%; height: 100%; border: 0; background: var(--dsw-alias-bg-layer-2); }
         .rd-settingsState { margin: 0 24px 24px; padding: 18px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
         .rd-settingsStateTitle { font-size: 16px; line-height: 24px; font-weight: 520; margin-bottom: 6px; }
         .rd-settingsStateBody { color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; }
         .rd-settingsStateActions { display: flex; gap: 8px; margin-top: 14px; }
+        .rd-settingsNativeUrl { display: block; margin-top: 10px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; word-break: break-all; }
         .rd-pickerMenu { position: fixed; z-index: 2147482600; min-width: 260px; max-width: min(360px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); }
         .rd-addChoiceGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
         .rd-addChoice { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 92px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
@@ -775,10 +773,10 @@ window.__ModuleLoader__.load({
       return String(u)
     }
 
-    function withSettingsView(url) {
-      const u = new URL(withParent(url))
-      u.searchParams.set('dshRemoteDesktop', '1')
-      u.searchParams.set('view', 'settings')
+    function nativeRemoteUrl(url) {
+      const u = new URL(url)
+      u.search = ''
+      u.hash = ''
       return String(u)
     }
 
@@ -810,7 +808,7 @@ window.__ModuleLoader__.load({
         h('button', { type: 'button', className: 'rd-settingsTrigger', onClick: () => setOpen(true), 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' }, props.wide === false ? '⚙' : '⚙ Settings'),
         open && h('div', { className: 'rd-settingsOverlay', role: 'presentation' },
           h('div', { className: 'rd-settingsMask', onClick: close }),
-          h('div', { className: `rd-settingsPanel${localActive ? '' : ' rd-settingsRemotePanel'}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings', 'data-rd-settings-active-host': activeHostId },
+          h('div', { className: 'rd-settingsPanel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings', 'data-rd-settings-active-host': activeHostId },
             h('nav', { className: 'rd-settingsNav' },
               h('div', { className: 'rd-settingsTitle' }, 'Settings'),
               h(SettingsHostFilter, { activeHostId, setActiveHostId }),
@@ -826,7 +824,7 @@ window.__ModuleLoader__.load({
               ),
               localActive
                 ? h('div', { className: 'rd-settingsOptions' }, active !== undefined && props.renderSlot('settings.section', { close }, { only: active }))
-                : h('div', { className: 'rd-settingsOptions rd-settingsRemoteOptions' }, h(RemoteSettingsPane, { activeHostId }))
+                : h('div', { className: 'rd-settingsOptions' }, h(RemoteSettingsPane, { activeHostId }))
             )
           )
         )
@@ -880,10 +878,9 @@ window.__ModuleLoader__.load({
     function RemoteSettingsPane({ activeHostId }) {
       const sources = useRemote(s => s.sources)
       const [message, setMessage] = useState('')
-      const [failedFrame, setFailedFrame] = useState(false)
       const active = sources.find(source => source.id === activeHostId)
       useEffect(() => { void store.refreshSources() }, [])
-      useEffect(() => { setMessage(''); setFailedFrame(false) }, [activeHostId, active?.iframeUrl])
+      useEffect(() => { setMessage('') }, [activeHostId, active?.iframeUrl])
       const connect = async () => {
         setMessage('')
         try { await store.connect(activeHostId) } catch (e) { setMessage(e.message || String(e)) }
@@ -894,35 +891,33 @@ window.__ModuleLoader__.load({
       if (active.state !== 'connected' || !active.iframeUrl) {
         return h(SettingsHostState, {
           title: `Connect to ${active.label}`,
-          body: active.error || `Connect ${active.label} to edit that host's own Settings pages.`,
+          body: active.error || `Connect ${active.label} to open that host's native DSH page and configure Settings there.`,
           action: h(Button, { variant: 'primary', onClick: () => void connect(), 'data-rd-settings-connect': activeHostId }, active.state === 'connecting' ? 'Connecting…' : 'Connect'),
           message,
         })
       }
-      if (failedFrame) {
-        return h(SettingsHostState, {
-          title: `Settings for ${active.label} did not load`,
-          body: 'Retry the settings view or reconnect this host.',
-          action: h(Button, { variant: 'primary', onClick: () => setFailedFrame(false), 'data-rd-settings-retry': activeHostId }, 'Retry'),
-          message,
-        })
+      const nativeUrl = nativeRemoteUrl(active.iframeUrl)
+      const openNative = () => {
+        setMessage('')
+        const opened = window.open(nativeUrl, '_blank', 'noopener,noreferrer')
+        if (opened === null) setMessage('Your browser blocked the remote DSH page. Use the link below to open it.')
       }
-      return h('iframe', {
-        key: `${active.id}:${active.iframeUrl}`,
-        className: 'rd-settingsRemoteFrame',
-        src: withSettingsView(active.iframeUrl),
-        title: `Settings for ${active.label}`,
-        onError: () => setFailedFrame(true),
-        'data-rd-settings-remote-frame': active.id,
+      return h(SettingsHostState, {
+        title: `Open ${active.label} DSH`,
+        body: `Remote settings for ${active.label} are configured in that host's native DSH page. The page stays available while this host remains connected.`,
+        action: h(Button, { variant: 'primary', onClick: openNative, 'data-rd-settings-open-native': active.id }, `Open ${active.label} DSH`),
+        message,
+        url: nativeUrl,
       })
     }
 
-    function SettingsHostState({ title, body, action, message }) {
+    function SettingsHostState({ title, body, action, message, url }) {
       return h('div', { className: 'rd-settingsState', 'data-rd-settings-remote-state': 'true' },
         h('div', { className: 'rd-settingsStateTitle' }, title),
         h('div', { className: 'rd-settingsStateBody' }, body),
         message && h('div', { className: 'rd-addError', role: 'alert' }, message),
-        action && h('div', { className: 'rd-settingsStateActions' }, action)
+        action && h('div', { className: 'rd-settingsStateActions' }, action),
+        url && h('a', { className: 'rd-settingsNativeUrl', href: url, target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, url)
       )
     }
 

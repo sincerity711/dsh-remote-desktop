@@ -23,8 +23,10 @@ const requiredClientNeedles = [
   'sidebar.settings',
   'data-rd-settings-host-switcher',
   'data-rd-settings-active-host',
-  'data-rd-settings-remote-frame',
-  'withSettingsView',
+  'data-rd-settings-open-native',
+  'data-rd-settings-native-link',
+  'nativeRemoteUrl',
+  "window.open(nativeUrl, '_blank', 'noopener,noreferrer')",
   '/remote-desktop/api/host-api',
   'WorkspaceAddSplitter',
   'data-rd-add-workspace-splitter',
@@ -35,6 +37,17 @@ const requiredClientNeedles = [
 ]
 for (const needle of requiredClientNeedles) {
   if (!localClient.includes(needle)) throw new Error(`packages/local/lib/client.js missing ${needle}`)
+}
+
+const forbiddenSettingsIframeNeedles = [
+  'function withSettingsView',
+  "view', 'settings'",
+  'data-rd-settings-remote-frame',
+  'data-dsh-remote-desktop-view',
+  'openSettingsSurface',
+]
+for (const needle of forbiddenSettingsIframeNeedles) {
+  if (localClient.includes(needle) || companionClient.includes(needle)) throw new Error(`settings-only iframe behavior remains: ${needle}`)
 }
 
 
@@ -88,9 +101,6 @@ for (const needle of forbiddenSidebarInline) {
 const requiredCompanionNeedles = [
   'event.origin !== parent',
   'data.token !== token',
-  'data-dsh-remote-desktop-view',
-  'openSettingsSurface',
-  "get('view') === 'settings'",
   'dsh-remote-desktop/open-session',
   '[class*="sidebarCol"] { visibility: hidden !important; pointer-events: none !important; overflow: hidden !important; }',
   ':has(> [class*="sidebarCol"])',

@@ -10,62 +10,27 @@ window.__ModuleLoader__.load({
       return { token: params.get('token') || '', parent: params.get('parent') || '' }
     }
 
-    function settingsView() {
-      return new URLSearchParams(window.location.search).get('view') === 'settings'
-    }
-
-    function installEmbeddedCss(view) {
+    function installEmbeddedCss() {
       document.body.setAttribute('data-dsh-remote-desktop-child', 'true')
-      document.body.setAttribute('data-dsh-remote-desktop-view', view)
       const style = document.createElement('style')
       style.setAttribute('data-dsh-remote-desktop-companion', '')
       style.textContent = `
         body[data-dsh-remote-desktop-child="true"] [class*="sidebarCol"] { visibility: hidden !important; pointer-events: none !important; overflow: hidden !important; }
         body[data-dsh-remote-desktop-child="true"] [class*="handle"][data-side="sidebar"] { display: none !important; }
         body[data-dsh-remote-desktop-child="true"] [class*="frame"]:has(> [class*="sidebarCol"]) { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
-        body[data-dsh-remote-desktop-view="settings"] { overflow: hidden !important; background: var(--dsw-alias-bg-layer-2, #fff) !important; }
-        body[data-dsh-remote-desktop-view="settings"] [class*="overlay"] { position: fixed !important; inset: 0 !important; display: flex !important; align-items: stretch !important; justify-content: stretch !important; background: transparent !important; backdrop-filter: none !important; }
-        body[data-dsh-remote-desktop-view="settings"] [class*="mask"] { display: none !important; }
-        body[data-dsh-remote-desktop-view="settings"] [role="dialog"][aria-modal="true"] { width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; box-shadow: none !important; }
       `
       document.head.appendChild(style)
-      return () => {
-        style.remove()
-        document.body.removeAttribute('data-dsh-remote-desktop-child')
-        document.body.removeAttribute('data-dsh-remote-desktop-view')
-      }
-    }
-
-    function findSettingsTrigger() {
-      const buttons = [...document.querySelectorAll('button')]
-      return buttons.find(button => {
-        const text = button.textContent?.trim().toLowerCase() || ''
-        const label = button.getAttribute('aria-label')?.toLowerCase() || ''
-        return button.getAttribute('aria-haspopup') === 'dialog' && (text.includes('settings') || label.includes('settings'))
-      })
-    }
-
-    function openSettingsSurface() {
-      let attempts = 0
-      const tick = () => {
-        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
-        findSettingsTrigger()?.click()
-        attempts += 1
-        if (attempts < 40) window.setTimeout(tick, 250)
-      }
-      tick()
+      return () => { style.remove(); document.body.removeAttribute('data-dsh-remote-desktop-child') }
     }
 
     exports.apply = function apply(ctx) {
       const marker = new URLSearchParams(window.location.search).get('dshRemoteDesktop')
-      const view = settingsView() ? 'settings' : 'session'
       const { token, parent } = parseHash()
       if (marker !== '1' || token === '' || parent === '') return
       ctx.effect(() => {
-        const disposeCss = installEmbeddedCss(view)
-        if (view === 'settings') openSettingsSurface()
+        const disposeCss = installEmbeddedCss()
         const ready = () => {
-          window.parent?.postMessage({ type: 'dsh-remote-desktop/ready', sourceToken: token, view }, parent)
+          window.parent?.postMessage({ type: 'dsh-remote-desktop/ready', sourceToken: token }, parent)
         }
         const waitUntilCurrent = (sessionId) => new Promise((resolve, reject) => {
           const deadline = Date.now() + 5000

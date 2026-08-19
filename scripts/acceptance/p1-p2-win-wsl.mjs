@@ -165,17 +165,25 @@ async function settingsUiChecks(page) {
   await page.waitForTimeout(1000)
   await clickButtonContaining(page, 'Remote Desktop').catch(() => {})
   await page.locator('[data-rd-settings-section="true"]').waitFor({ timeout: 10000 })
-  await item('P1-SETTINGS-000', 'Host switcher embeds remote settings', async () => {
+  await item('P1-SETTINGS-000', 'Host switcher opens remote native DSH page', async () => {
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator(`[data-rd-settings-host-option="${remotes[1].id}"]`).click()
-    const frame = page.locator(`[data-rd-settings-remote-frame="${remotes[1].id}"]`)
-    await frame.waitFor({ timeout: 10000 })
-    const src = await frame.getAttribute('src')
-    if (!src?.includes('view=settings')) throw new Error(`remote settings iframe missing view marker: ${src}`)
+    const link = page.locator('[data-rd-settings-native-link="true"]')
+    await link.waitFor({ timeout: 10000 })
+    const href = await link.getAttribute('href')
+    if (!href) throw new Error('remote native DSH link missing href')
+    if (href.includes('dshRemoteDesktop') || href.includes('token=')) throw new Error(`native DSH link leaked iframe mode: ${href}`)
+    const popupPromise = page.waitForEvent('popup')
+    await page.locator(`[data-rd-settings-open-native="${remotes[1].id}"]`).click()
+    const popup = await popupPromise
+    await popup.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {})
+    const opened = popup.url()
+    await popup.close().catch(() => {})
+    if (new URL(opened).origin !== new URL(href).origin) throw new Error(`opened ${opened}, expected origin ${href}`)
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator('[data-rd-settings-host-option="local"]').click()
-    await page.locator('[data-rd-settings-remote-frame]').waitFor({ state: 'detached', timeout: 10000 })
-    return 'Host switcher embedded selected remote settings and returned to Local'
+    await page.locator('[data-rd-settings-native-link="true"]').waitFor({ state: 'detached', timeout: 10000 })
+    return 'Host switcher opened selected remote native DSH page and returned to Local'
   })
   await item('P1-SETTINGS-001', 'ssh config hosts listed in UI', async () => {
     for (const remote of remotes) await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).waitFor({ timeout: 10000 })

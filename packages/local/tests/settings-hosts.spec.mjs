@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-test('settings page lists ssh hosts and switches between local and remote settings', async () => {
+test('settings page lists ssh hosts and opens remote native DSH pages', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
 
   assert.match(client, /SSH hosts/)
@@ -16,10 +16,12 @@ test('settings page lists ssh hosts and switches between local and remote settin
   assert.match(client, /Local settings/)
   assert.match(client, /Remote settings: /)
   assert.match(client, /data-rd-settings-remote-state/)
-  assert.match(client, /data-rd-settings-remote-frame/)
-  assert.match(client, /Connect \$\{active\.label\} to edit that host's own Settings pages\./)
+  assert.match(client, /Open \$\{active\.label\} DSH/)
+  assert.match(client, /Remote settings for \$\{active\.label\} are configured in that host's native DSH page\./)
+  assert.match(client, /Connect \$\{active\.label\} to open that host's native DSH page and configure Settings there\./)
   assert.match(client, /not connected/)
   assert.doesNotMatch(client, /styles\.hostFilter/)
+  assert.doesNotMatch(client, /data-rd-settings-remote-frame/)
   assert.doesNotMatch(client, /Save source/)
   assert.doesNotMatch(client, /data-rd-settings-save/)
 })
