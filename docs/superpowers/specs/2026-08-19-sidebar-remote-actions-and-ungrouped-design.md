@@ -74,6 +74,55 @@ Every sidebar operation must follow this table.
 
 All remote mutations refresh only the owning host snapshot after success. Remote mutation errors surface in the same UI affordance used by the official sidebar where possible. No remote id may be passed to a local `ctx.workspaces` or `ctx.sessions` mutation.
 
+
+## Complete sidebar control inventory
+
+The implementation must review every control below, not only mutation menus.
+
+### Header controls
+
+- Search icon: expands the official search input; no source mutation. It must search the combined local/remote session set once a query is present.
+- Search clear button and Escape: clear the query only; they must not reset active source or close remote iframes.
+- View options menu: `Group by workspace` and `In one list` are presentation choices over the combined derived data. `Manual` ordering must keep source-local mutation semantics; `Last updated` may interleave sources without remote calls.
+- Add workspace icon: opens `WorkspaceAddSplitter` directly.
+
+### Workspace group row controls
+
+- Row click: expands or collapses that group only. A remote workspace group click must not activate the iframe.
+- New session plus button: local rows call local start-session; remote workspace rows call the remote start-session flow for that host. Ungrouped rows do not show this button.
+- Workspace row menu: local workspace rows keep Rename and Delete; remote workspace rows forward Rename and Delete to the owning host. Ungrouped rows use a different menu containing only `Archive all sessions`.
+- Workspace drag: local-to-local reorders locally; remote-to-remote reorders only when both rows belong to the same host; local/remote or remote/remote across different hosts rejects.
+- Hover card: local and remote workspace hover cards may show title/path/created time. Remote hover text must include the host label for accessibility. Ungrouped has no workspace hover card.
+
+### Session row controls
+
+- Row click: local opens locally; remote opens the owning host iframe and posts `open-session`.
+- Session row menu: Rename, Fork, and Archive use local APIs for local rows and remote RPC for remote rows.
+- Session drag inside workspace groups: allowed only within the same source and same workspace bucket; cross-source drops reject.
+- Session drag in flat view: may update only the presentation order unless the target can be mapped to a single source-local workspace API call. It must never translate a flat cross-source drop into a local or remote workspace reorder.
+- Running, completed, pending-interaction, and subagent status indicators are read-only projections from each session row and require no forwarding.
+
+### Search result controls
+
+- Search result click: opens by source-qualified session id. Local results call local open; remote results open the remote iframe.
+- Search status and has-more rows are read-only. Remote search failures should degrade that host's content results without breaking local results unless the user aborted the query.
+
+### Workspace picker and Add workspace splitter controls
+
+- Existing local workspace selection starts a local session in that workspace.
+- Existing remote workspace selection starts or reuses a session on that host.
+- Footer Add workspace entry opens the Local / Remote splitter.
+- Splitter Local button delegates to the official directory flow and local `workspace.create`.
+- Splitter Remote button opens the Remote Desktop host/path modal in the main page or asks the parent page from iframe mode.
+- Remote setup Host dropdown changes only the target host for creation.
+- Remote setup Add button calls remote `workspace.create`, refreshes that host, and opens a session there.
+
+### Modal controls
+
+- Workspace rename confirm/cancel and session rename confirm/cancel use the decoded source of the original target.
+- Workspace delete confirm/cancel uses the decoded source of the original target.
+- Errors from remote mutations stay in the modal that initiated the operation.
+
 ## Source-aware Ungrouped groups
 
 Ungrouped is split by source before the official tree receives group rows.
