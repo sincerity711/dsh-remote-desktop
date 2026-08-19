@@ -5,7 +5,12 @@ Remote Desktop patch summary for official ui-workspace baseline 9f8359451a6f8df1
 - Route local session row opens to `ctx.sessions.open` and remote session row opens to `store.openRemote`.
 - Keep workspace row clicks as expand/collapse only.
 - Render one compact remote host marker plus colored dot on remote project rows; host ids map deterministically to colors.
-- Hide unsupported remote mutation actions in this release.
-- Route the Add workspace affordance to `WorkspaceAddSplitter` so Local and Remote remain separate.
+- Forward supported remote workspace/session mutations through the connected host API and refresh that host snapshot: new session, rename/delete/reorder workspace, rename/fork/archive/reorder session.
+- Reject cross-source reorders instead of sending source-qualified ids to a local or unrelated remote registry.
+- Route the sidebar Add workspace affordance directly to `WorkspaceAddSplitter` so Local and Remote remain separate; picker footer Add workspace entries use the same splitter.
+- Use an official-theme remote directory picker for remote workspace creation instead of primary manual path entry.
+- Forward content search to connected hosts and source-qualify remote result ids before merging them with local search results.
+- Split Ungrouped into local and per-remote-host buckets, and add a per-bucket `Archive all sessions` action that reuses the source-aware archive route.
+- Keep duplicate workspace-name checks source-local so two different hosts can use the same workspace title.
 
 This file intentionally records the small maintained delta instead of carrying a generated monolithic diff while `packages/local/lib/client.js` remains hand-bundled JavaScript. When the client is split into fork modules, replace this summary with `git diff --no-index baseline fork` output.

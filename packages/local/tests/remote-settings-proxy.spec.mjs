@@ -28,3 +28,14 @@ test('remote desktop settings section opens remote native DSH pages', async () =
   assert.doesNotMatch(client, /installHostApiFetchPatch/)
   assert.doesNotMatch(client, /settingsHostId/)
 })
+
+
+test('remote browse API is read-only and separate from host RPC proxy', async () => {
+  const server = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
+
+  assert.match(server, /req\.method === 'GET' && suffix === '\/browse'/)
+  assert.match(server, /browseRemoteDirectory\(source, \{ path, hidden \}, runtimes\.get\(id\)\)/)
+  assert.match(server, /buildRemoteBrowseSshArgs\(source\)/)
+  assert.match(server, /proc\.stdin\.end\(JSON\.stringify\(\{ path: input\.path, hidden: Boolean\(input\.hidden\) \}\)\)/)
+  assert.doesNotMatch(server, /host-api[\s\S]{0,240}browseRemoteDirectory/)
+})

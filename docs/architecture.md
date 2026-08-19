@@ -58,6 +58,7 @@ Saved entries override discovered SSH entries with the same id. Connections pref
 | `POST /remote-desktop/api/disconnect` | Kill the SSH process and close the proxy for one host. |
 | `POST /remote-desktop/api/delete` | Disconnect and remove a saved host override. Discovered SSH hosts remain discoverable. |
 | `GET /remote-desktop/api/snapshot?id=<host>` | Fetch remote `session.list` and `workspace.list` through the tunnel. |
+| `GET /remote-desktop/api/browse?id=<host>&path=<path>&hidden=0|1` | List readable remote directories for the Add remote workspace picker, starting at the SSH user's home when `path` is omitted. |
 | `*/remote-desktop/api/host-api?id=<host>&path=/api/<method>` | Proxy one host API request to the connected remote DSH instance. |
 
 ### Connection lifecycle
@@ -111,7 +112,10 @@ This prevents collisions between local ids and remote ids, and between different
 - local session rows call local `ctx.sessions.open` and set active target to local;
 - remote session rows set active target to `{ kind: "remote", sourceId, sessionId }` and queue an iframe `open-session` command;
 - local workspace mutation actions still call local workspace/session APIs;
-- unsupported remote mutation actions are suppressed for this release.
+- supported remote workspace/session mutations forward to the owning host through `/remote-desktop/api/host-api`;
+- cross-source drag and reorder attempts are rejected before a local or unrelated remote API receives a source-qualified id.
+
+Ungrouped sessions are also source-aware. Local loose sessions render under the local Ungrouped bucket, and each connected remote host with loose sessions renders its own Ungrouped bucket with the same compact host marker used by remote workspace rows. Each Ungrouped bucket exposes `Archive all sessions`, which archives only that bucket's sessions through the local archive API or that host's remote `workspace.archiveSession` API.
 
 ## Remote iframe overlay and bridge
 
@@ -142,10 +146,10 @@ The server entry point `packages/companion/lib/index.js` is intentionally empty 
 
 ## Workspace add flow
 
-The client owns `WorkspaceAddSplitter`, registered into `conversation.hero.workspace` in both main-host and remote-iframe modes.
+The client owns `WorkspaceAddSplitter`, registered into `conversation.hero.workspace` in both main-host and remote-iframe modes. The official-looking sidebar Add workspace button opens this splitter directly instead of first opening the official single-instance workspace picker or directory flow. Picker footer Add workspace entries route to the same splitter.
 
 - Local branch: delegates to the official directory-flow slot for the current DSH instance, then creates a workspace through that instance's `ctx.workspaces.create`.
-- Main-host remote branch: opens a local Remote setup modal, posts `workspace.create` through `/remote-desktop/api/host-api`, refreshes the host snapshot, creates or reuses a blank remote session, and opens the remote iframe.
+- Main-host remote branch: opens a local Remote setup modal, browses remote directories through `/remote-desktop/api/browse`, posts `workspace.create` through `/remote-desktop/api/host-api` for the selected directory, refreshes the host snapshot, creates or reuses a blank remote session, and opens the remote iframe.
 - Remote-iframe remote branch: sends `dsh-remote-desktop/add-workspace-remote-request` to the parent with the child token and request id. The parent validates origin/token and opens the main-host Remote setup modal.
 
 Remote workspace creation must not fall back to local workspace creation after remote errors.
@@ -162,7 +166,7 @@ This project uses “fork” narrowly: copied upstream source with a recorded ba
 
 | Surface | Status | Upstream baseline | Why |
 | --- | --- | --- | --- |
-| `ui-workspace` browser/picker/tree/rows/store/locales | **Vendored fork** | `deepseek-harness` commit `9f8359451a6f8df17f65bc2c398810ac19bdfc8a`, package `packages/client/ui-workspace`; recorded in `packages/local/upstream/ui-workspace/UPSTREAM.md` | The sidebar must look and behave like official DSH while accepting source-qualified remote rows, host markers, remote open routing, and remote-action guards. |
+| `ui-workspace` browser/picker/tree/rows/store/locales | **Vendored fork** | `deepseek-harness` commit `9f8359451a6f8df17f65bc2c398810ac19bdfc8a`, package `packages/client/ui-workspace`; recorded in `packages/local/upstream/ui-workspace/UPSTREAM.md` | The sidebar must look and behave like official DSH while accepting source-qualified remote rows, host markers, remote open routing, and host-forwarded remote workspace/session actions. |
 | Remote Desktop settings section | **Official-slot extension, not a fork** | `settings.section` from `ui-settings-general` | The official Settings shell stays enabled; Remote Desktop contributes one settings page using official primitives and design tokens. |
 | Workspace Add splitter | **Plugin-owned replacement/extension, not a source fork** | Uses official directory-flow slot and UI primitives | The first screen must split Local and Remote. Local delegates back to the official current-instance directory flow; Remote is plugin-owned. |
 | Local server API, SSH tunnel/proxy, remote store, iframe overlay, companion bridge | **Custom dsh-remote-desktop code** | None | These implement remote host lifecycle and iframe control; they are not forks of DSH packages. |

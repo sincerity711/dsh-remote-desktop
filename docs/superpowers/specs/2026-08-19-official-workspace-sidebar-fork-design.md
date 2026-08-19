@@ -174,15 +174,17 @@ Local workspaces and sessions keep official actions where the existing local API
 - archive session;
 - search.
 
-Remote rows are read/open only in this pass:
+Remote rows forward supported actions to the owning host through `/remote-desktop/api/host-api`, then refresh that host snapshot:
 
 - remote workspace row can expand/collapse;
 - remote session row can open the remote iframe;
-- remote start-session is allowed only through the existing remote session/workspace creation flow when explicitly supported by current code;
-- remote rename/delete/reorder/fork/archive actions are hidden or disabled;
-- search applies title filtering to local and remote visible rows; content-snippet search remains local-only and must be labeled or structured so remote rows are not presented as local content matches.
+- remote start-session calls `session.create` or reuses that workspace's blank session;
+- remote rename/delete/reorder workspace call `workspace.rename`, `workspace.delete`, and `workspace.insertBefore`;
+- remote rename/fork/archive/reorder session call `session.rename`, `session.fork`, `workspace.archiveSession`, and `workspace.insertSessionBefore`;
+- cross-source reorders are rejected instead of translating source-qualified ids into a local or unrelated remote registry;
+- search applies title filtering to local and remote visible rows, forwards content search to connected remote hosts, source-qualifies remote result ids, and merges them with local content results.
 
-Disabled remote behavior must not call local mutation APIs with remote ids.
+Unsupported remote behavior must not call local mutation APIs with remote ids; supported remote actions must call the owning remote host API.
 
 ## Add workspace compatibility
 

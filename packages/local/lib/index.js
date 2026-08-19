@@ -196,6 +196,108 @@ async function waitTcp(port, signal) {
   throw lastError ?? new Error('timed out waiting for tunnel')
 }
 
+export function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`
+}
+
+function sshDestinationArgs(source) {
+  return [
+    ...(source.sshAlias && process.env.DSH_REMOTE_DESKTOP_SSH_CONFIG ? ['-F', sshConfigPath()] : []),
+    ...(source.sshAlias ? [source.sshAlias] : ['-p', String(source.sshPort), `${source.sshUser}@${source.sshHost}`]),
+  ]
+}
+
+const REMOTE_BROWSE_SCRIPT = String.raw`
+const fs = require('node:fs/promises')
+const path = require('node:path')
+const os = require('node:os')
+
+async function readStdin() {
+  const chunks = []
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk))
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+function isHidden(name) {
+  return name.startsWith('.') && name !== '.' && name !== '..'
+}
+
+async function main() {
+  const input = JSON.parse(await readStdin() || '{}')
+  const home = await fs.realpath(os.homedir())
+  const requested = typeof input.path === 'string' && input.path !== '' ? input.path : home
+  const current = await fs.realpath(requested)
+  const stat = await fs.stat(current)
+  if (!stat.isDirectory()) throw new Error('path is not a directory')
+  const dirents = await fs.readdir(current, { withFileTypes: true })
+  const entries = []
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory()) continue
+    if (!input.hidden && isHidden(dirent.name)) continue
+    entries.push({
+      name: dirent.name,
+      path: path.join(current, dirent.name),
+      hidden: isHidden(dirent.name),
+    })
+  }
+  entries.sort((a, b) => Number(a.hidden) - Number(b.hidden) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  const parent = path.dirname(current)
+  process.stdout.write(JSON.stringify({
+    path: current,
+    home,
+    ...(parent !== current ? { parent } : {}),
+    entries,
+  }))
+}
+
+main().catch((error) => {
+  process.stderr.write(error instanceof Error ? error.message : String(error))
+  process.exit(1)
+})
+`
+
+export function buildRemoteBrowseSshArgs(source) {
+  return [
+    '-o', 'BatchMode=yes',
+    ...sshDestinationArgs(source),
+    `node -e ${shellQuote(REMOTE_BROWSE_SCRIPT)}`,
+  ]
+}
+
+export function parseBrowseHidden(value) {
+  return value === '1' || value === 'true'
+}
+
+function normalizeBrowseResult(value) {
+  if (typeof value?.path !== 'string' || typeof value?.home !== 'string' || !Array.isArray(value.entries)) throw new Error('invalid browse response')
+  return {
+    path: value.path,
+    home: value.home,
+    ...(typeof value.parent === 'string' ? { parent: value.parent } : {}),
+    entries: value.entries.flatMap((entry) => {
+      if (typeof entry?.name !== 'string' || typeof entry?.path !== 'string') return []
+      return [{ name: entry.name, path: entry.path, hidden: Boolean(entry.hidden) }]
+    }),
+  }
+}
+
+async function browseRemoteDirectory(source, input, runtime) {
+  if (runtime?.state !== 'connected') throw new Error('source is not connected')
+  const proc = spawn('ssh', buildRemoteBrowseSshArgs(source), { stdio: ['pipe', 'pipe', 'pipe'] })
+  const timer = setTimeout(() => { proc.kill() }, 10000)
+  let stdout = ''
+  let stderr = ''
+  proc.stdout.on('data', chunk => { stdout += String(chunk) })
+  proc.stderr.on('data', chunk => { stderr += String(chunk).slice(0, 4000) })
+  proc.stdin.end(JSON.stringify({ path: input.path, hidden: Boolean(input.hidden) }))
+  const code = await new Promise((resolve, reject) => {
+    proc.once('error', reject)
+    proc.once('exit', code => resolve(code))
+  }).finally(() => clearTimeout(timer))
+  if (code !== 0) throw new Error(stderr.trim() || `remote browse failed (${code})`)
+  return normalizeBrowseResult(JSON.parse(stdout))
+}
+
 function startProxyServer(targetPort) {
   const server = createServer((req, res) => {
     proxyHttp(req, res, targetPort).catch((error) => {
@@ -329,8 +431,7 @@ export async function apply(ctx) {
         '-o', 'ExitOnForwardFailure=yes',
         '-o', 'ServerAliveInterval=15',
         '-o', 'ServerAliveCountMax=3',
-        ...(source.sshAlias && process.env.DSH_REMOTE_DESKTOP_SSH_CONFIG ? ['-F', sshConfigPath()] : []),
-        ...(source.sshAlias ? [source.sshAlias] : ['-p', String(source.sshPort), `${source.sshUser}@${source.sshHost}`]),
+        ...sshDestinationArgs(source),
       ]
       const proc = spawn('ssh', sshArgs, { stdio: ['ignore', 'ignore', 'pipe'] })
       runtime.ssh = proc
@@ -435,6 +536,17 @@ export async function apply(ctx) {
           disconnectSource(String(id))
           await persist((await loadSavedSources()).filter(item => item.id !== String(id)))
           writeJson(res, 200, { ok: true })
+          return
+        }
+        if (req.method === 'GET' && suffix === '/browse') {
+          const url = new URL(req.url ?? '/', 'http://local')
+          const id = url.searchParams.get('id') ?? ''
+          sources = await loadSources()
+          const source = sources.find(item => item.id === id)
+          if (source === undefined) throw new Error(`unknown source ${id}`)
+          const path = url.searchParams.get('path') ?? undefined
+          const hidden = parseBrowseHidden(url.searchParams.get('hidden') ?? '')
+          writeJson(res, 200, { ok: true, ...(await browseRemoteDirectory(source, { path, hidden }, runtimes.get(id))) })
           return
         }
         if (req.method === 'GET' && suffix === '/snapshot') {

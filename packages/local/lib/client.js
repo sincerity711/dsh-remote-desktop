@@ -88,6 +88,17 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
             }
             /** Display label for the ungrouped bucket row. */
             const UNGROUPED_LABEL = "Ungrouped";
+            /** Persisted account-key prefix for source-specific Ungrouped buckets. */
+            const UNGROUPED_SOURCE_KEY_PREFIX = "__ungrouped__::";
+            function sourceKeyOf(session) {
+                  return session.sourceKind === "remote" && session.sourceId !== void 0 ? session.sourceId : "local";
+            }
+            function ungroupedKeyForSource(sourceId) {
+                  return sourceId === "local" ? "" : `${UNGROUPED_SOURCE_KEY_PREFIX}${sourceId}`;
+            }
+            function isUngroupedKey(key) {
+                  return key === "" || key.startsWith(UNGROUPED_SOURCE_KEY_PREFIX);
+            }
             /**
             * Directory display label: basename of the path (both separators accepted).
             * Ungrouped-bucket fallback for surfaces without a workspace title.
@@ -122,7 +133,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   return session.blank ? "New Session" : session.displayTitle;
             }
             /** Build one group without projecting session lineage into presentation. */
-            function buildGroup(key, workspaceId, cwd, createdAt, label, members, order, remoteMarker) {
+            function buildGroup(key, workspaceId, cwd, createdAt, label, members, order, remoteMarker, sourceKind, sourceId) {
                   const sessions = [...members];
                   if (order === "recency") sessions.sort(byRecency);
                   return {
@@ -132,6 +143,8 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         createdAt,
                         label,
                         remoteMarker,
+                        sourceKind,
+                        sourceId,
                         sessions
                   };
             }
@@ -158,7 +171,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
             * outside every Workspace trail in the browser-local Ungrouped order, which
             * falls back to recency before that order is initialized.
             */
-            function groupByWorkspace(list, workspaces, archived, ungroupedOrder) {
+            function groupByWorkspace(list, workspaces, archived, ungroupedOrders) {
                   const groups = [];
                   const accounted = /* @__PURE__ */ new Set();
                   for (const workspace of workspaces) {
@@ -170,10 +183,25 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                               if (!sessionVisible(summary, list.current, archived)) continue;
                               members.push(summary);
                         }
-                        groups.push(buildGroup(workspace.workspaceId, workspace.workspaceId, workspace.path, Date.parse(workspace.createdAt), workspace.title, members, "account", workspace.remoteMarker));
+                        groups.push(buildGroup(workspace.workspaceId, workspace.workspaceId, workspace.path, Date.parse(workspace.createdAt), workspace.title, members, "account", workspace.remoteMarker, workspace.sourceKind, workspace.sourceId));
                   }
-                  const stray = list.ids.map((id) => list.byId[id]).filter((s) => s !== void 0 && !accounted.has(s.id) && sessionVisible(s, list.current, archived));
-                  if (stray.length > 0) groups.push(buildGroup("", void 0, void 0, void 0, UNGROUPED_LABEL, ungroupedOrder === void 0 ? stray : orderedUngrouped(stray, ungroupedOrder), ungroupedOrder === void 0 ? "recency" : "account"));
+                  const strayBySource = /* @__PURE__ */ new Map();
+                  for (const id of list.ids) {
+                        const session = list.byId[id];
+                        if (session === void 0 || accounted.has(session.id) || !sessionVisible(session, list.current, archived)) continue;
+                        const sourceId = sourceKeyOf(session);
+                        const key = ungroupedKeyForSource(sourceId);
+                        let bucket = strayBySource.get(key);
+                        if (bucket === void 0) {
+                              bucket = { key, sourceId, sourceKind: sourceId === "local" ? "local" : "remote", remoteMarker: session.remoteMarker, members: [] };
+                              strayBySource.set(key, bucket);
+                        }
+                        bucket.members.push(session);
+                  }
+                  for (const bucket of strayBySource.values()) {
+                        const stored = ungroupedOrders?.[bucket.key];
+                        groups.push(buildGroup(bucket.key, void 0, void 0, void 0, UNGROUPED_LABEL, stored === void 0 ? bucket.members : orderedUngrouped(bucket.members, stored), stored === void 0 ? "recency" : "account", bucket.remoteMarker, bucket.sourceKind, bucket.sourceId));
+                  }
                   return groups;
             }
             function sessionNode(s, descendants) {
@@ -188,6 +216,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         sourceKind: s.sourceKind,
                         sourceId: s.sourceId,
                         rawSessionId: s.rawSessionId,
+                        remoteMarker: s.remoteMarker,
                         ...s.pendingInteraction === void 0 ? {} : { pendingInteraction: s.pendingInteraction }
                   };
             }
@@ -209,9 +238,10 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   const archived = new Set(archivedSessionIds);
                   const expandedGroups = new Set(view.expandedGroups);
                   const descendants = (0, _deepseek_ai_dsh_client_runtime_client.indexSubagentDescendants)(list.byId);
-                  const currentGroup = list.current === void 0 ? void 0 : workspaces.find((w) => w.sessionIds.includes(list.current))?.workspaceId ?? "";
+                  const currentSession = list.current === void 0 ? void 0 : list.byId[list.current];
+                  const currentGroup = list.current === void 0 ? void 0 : workspaces.find((w) => w.sessionIds.includes(list.current))?.workspaceId ?? (currentSession === void 0 ? "" : ungroupedKeyForSource(sourceKeyOf(currentSession)));
                   const groups = [];
-                  for (const g of groupByWorkspace(list, workspaces, archived, view.ungroupedOrder)) {
+                  for (const g of groupByWorkspace(list, workspaces, archived, view.ungroupedOrders)) {
                         const expanded = expandedGroups.has(g.key) || g.remoteMarker !== void 0;
                         groups.push({
                               key: g.key,
@@ -220,6 +250,8 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                               createdAt: g.createdAt,
                               label: g.label,
                               remoteMarker: g.remoteMarker,
+                              sourceKind: g.sourceKind,
+                              sourceId: g.sourceId,
                               sessionCount: g.sessions.length,
                               expanded,
                               containsCurrent: g.key === currentGroup,
@@ -473,7 +505,11 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
                   const active = group.expanded && group.containsCurrent;
                   const [menuOpen, setMenuOpen] = (0, react.useState)(false);
-                  const workspaceMenuItems = [{
+                  const workspaceMenuItems = actions?.archiveAll !== void 0 ? [{
+                        id: "archive-all",
+                        label: t("menu.archiveAllSessions"),
+                        icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutline20, { size: 16 })
+                  }] : [{
                         id: "rename",
                         label: t("rename"),
                         icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
@@ -488,6 +524,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         role: "treeitem",
                         "aria-expanded": row.expanded,
                         "data-rd-workspace-source-kind": row.remoteMarker !== void 0 ? "remote" : "local",
+                        "data-rd-ungrouped-source-id": row.workspaceId === void 0 ? row.sourceId : void 0,
                         "data-rd-workspace-id": row.workspaceId,
                         onClick: onToggle,
                         draggable: drag !== void 0,
@@ -530,10 +567,9 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                                           items: workspaceMenuItems,
                                           onSelect: (id) => {
                                                 setMenuOpen(false);
-                                                /* v8 ignore next -- workspaceMenuItems carries exactly these two rows today. */
-                                                if (id !== "rename" && id !== "delete") return;
-                                                if (id === "rename") actions.rename();
-                                                else actions.delete();
+                                                if (id === "archive-all") actions.archiveAll?.();
+                                                else if (id === "rename") actions.rename?.();
+                                                else if (id === "delete") actions.delete?.();
                                           },
                                           portal: true,
                                           closeOnPointerLeave: true,
@@ -547,7 +583,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                                                 },
                                                 children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutline16, {})
                                           })
-                                    }), (0, react_jsx_runtime.jsx)("button", {
+                                    }), row.workspaceId !== void 0 && (0, react_jsx_runtime.jsx)("button", {
                                           type: "button",
                                           className: Rows_module_css_default.iconButton,
                                           "aria-label": t("actions.newSession.aria", { name: label }),
@@ -862,7 +898,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   const addEntries = flowAvailable ? [{
                         id: ADD_WORKSPACE,
                         label: t("menu.addWorkspace"),
-                        icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 16 }),
+                        icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconProjectAddOutline16, { size: 16 }),
                         disabled: flowBusy
                   }] : [];
                   const pinAdd = !addOnly && workspaces.length > 0;
@@ -1225,7 +1261,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
             }
             /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
-            function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
+            function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onUngroupedArchiveAll, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
                   const list = useSessions((s) => s);
                   const current = list.current;
                   const [expandedSessionGroups, setExpandedSessionGroups] = (0, react.useState)([]);
@@ -1235,7 +1271,8 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   const workspaceDropCommitted = (0, react.useRef)(false);
                   const previousOrderBy = (0, react.useRef)(orderBy);
                   useNativeDragAcceptance(drag !== null || workspaceDrag !== null);
-                  const currentGroup = current === void 0 ? void 0 : workspaces.find((w) => w.sessionIds.includes(current))?.workspaceId ?? "";
+                  const currentSession = current === void 0 ? void 0 : list.byId[current];
+                  const currentGroup = current === void 0 ? void 0 : workspaces.find((w) => w.sessionIds.includes(current))?.workspaceId ?? (currentSession === void 0 ? "" : ungroupedKeyForSource(sourceKeyOf(currentSession)));
                   (0, react.useEffect)(() => {
                         if (current === void 0 || currentGroup === void 0 || Object.hasOwn(groupExpansion, currentGroup)) return;
                         setGroupExpanded(currentGroup, true);
@@ -1246,9 +1283,21 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         groupExpansion
                   ]);
                   const expandedGroups = (0, react.useMemo)(() => Object.entries(groupExpansion).filter(([, expanded]) => expanded).map(([key]) => key), [groupExpansion]);
-                  const ungroupedSessionIds = (0, react.useMemo)(() => {
+                  const ungroupedAccounts = (0, react.useMemo)(() => {
                         const accounted = new Set(workspaces.flatMap((workspace) => workspace.sessionIds));
-                        return list.ids.filter((id) => list.byId[id] !== void 0 && !accounted.has(id));
+                        const byKey = /* @__PURE__ */ new Map();
+                        for (const id of list.ids) {
+                              const session = list.byId[id];
+                              if (session === void 0 || accounted.has(id)) continue;
+                              const key = ungroupedKeyForSource(sourceKeyOf(session));
+                              let account = byKey.get(key);
+                              if (account === void 0) {
+                                    account = { key, sessionIds: [] };
+                                    byKey.set(key, account);
+                              }
+                              account.sessionIds.push(id);
+                        }
+                        return [...byKey.values()];
                   }, [list, workspaces]);
                   (0, react.useEffect)(() => {
                         if (list.phase !== "ready") return;
@@ -1257,10 +1306,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         const accounts = [...workspaces.map((workspace) => ({
                               key: workspace.workspaceId,
                               sessionIds: workspace.sessionIds.filter((id) => list.byId[id] !== void 0)
-                        })), {
-                              key: "",
-                              sessionIds: ungroupedSessionIds
-                        }];
+                        })), ...ungroupedAccounts];
                         for (const { key, sessionIds } of accounts) {
                               const previousOrder = sessionOrderByAccount[key];
                               const next = nextSessionOrderAccount({
@@ -1279,7 +1325,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         sessionOrderByAccount,
                         sessionUpdatedAtByAccount,
                         syncSessionOrderAccount,
-                        ungroupedSessionIds,
+                        ungroupedAccounts,
                         workspaces
                   ]);
                   const orderedWorkspaces = (0, react.useMemo)(() => {
@@ -1292,16 +1338,17 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                               };
                         });
                   }, [sessionOrderByAccount, workspaces]);
-                  const orderedUngroupedSessionIds = (0, react.useMemo)(() => reconciledSessionOrder(ungroupedSessionIds, sessionOrderByAccount[""]), [sessionOrderByAccount, ungroupedSessionIds]);
+                  const orderedUngroupedByAccount = (0, react.useMemo)(() => Object.fromEntries(ungroupedAccounts.map((account) => [account.key, reconciledSessionOrder(account.sessionIds, sessionOrderByAccount[account.key])])), [sessionOrderByAccount, ungroupedAccounts]);
                   const groups = (0, react.useMemo)(() => deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
                         expandedGroups,
-                        ...sessionOrderByAccount[""] === void 0 ? {} : { ungroupedOrder: sessionOrderByAccount[""] }
+                        ungroupedOrders: Object.fromEntries(Object.entries(orderedUngroupedByAccount).flatMap(([key, order]) => sessionOrderByAccount[key] === void 0 ? [] : [[key, order]]))
                   }), [
                         list,
                         orderedWorkspaces,
                         archivedSessionIds,
                         expandedGroups,
-                        sessionOrderByAccount
+                        sessionOrderByAccount,
+                        orderedUngroupedByAccount
                   ]);
                   const now = Date.now();
                   const commitSessionDrag = (activeDrag, over) => {
@@ -1317,13 +1364,13 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         const sourceIndex = group.sessions.findIndex((session) => session.id === activeDrag.sessionId);
                         const anchorIndex = anchor === void 0 ? group.sessions.length : group.sessions.findIndex((session) => session.id === anchor);
                         if (sourceIndex !== -1 && (anchorIndex === sourceIndex || anchorIndex === sourceIndex + 1)) return;
-                        const accountSessionIds = activeDrag.accountKey === "" ? orderedUngroupedSessionIds : orderedWorkspaces.find((workspace) => workspace.workspaceId === activeDrag.accountKey)?.sessionIds;
+                        const accountSessionIds = isUngroupedKey(activeDrag.accountKey) ? orderedUngroupedByAccount[activeDrag.accountKey] : orderedWorkspaces.find((workspace) => workspace.workspaceId === activeDrag.accountKey)?.sessionIds;
                         if (accountSessionIds === void 0) return;
                         const nextOrder = accountSessionIds.filter((id) => id !== activeDrag.sessionId);
                         const insertAt = anchor === void 0 ? nextOrder.length : nextOrder.indexOf(anchor);
                         nextOrder.splice(insertAt === -1 ? nextOrder.length : insertAt, 0, activeDrag.sessionId);
                         setSessionOrder(activeDrag.accountKey, nextOrder.map((id) => id));
-                        if (orderBy === "updated" || activeDrag.accountKey === "") return;
+                        if (orderBy === "updated" || isUngroupedKey(activeDrag.accountKey)) return;
                         insertSessionBefore(activeDrag.accountKey, activeDrag.sessionId, anchor).catch((reason) => {
                               console.warn("session reorder rejected:", reason);
                         });
@@ -1417,7 +1464,11 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                                                                   }
                                                             },
                                                             drag: workspaceDragProps,
-                                                            actions: group.workspaceId === void 0 ? void 0 : {
+                                                            actions: group.workspaceId === void 0 ? {
+                                                                  archiveAll: () => {
+                                                                        onUngroupedArchiveAll(group.key, group.sessions.map((session) => session.id));
+                                                                  }
+                                                            } : {
                                                                   rename: () => {
                                                                         /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
                                                                         if (group.workspaceId !== void 0) onRenameRequest(group.workspaceId, group.label);
@@ -1673,7 +1724,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
             * @param props - composed slot props (shell owner share + store + injected actions).
             * @returns the region element tree.
             */
-            function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, renderSlot, t }) {
+            function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, renderSlot, t, openWorkspaceAdd }) {
                   const workspaces = useWorkspaces((state) => state.items);
                   const workspacePhase = useWorkspaces((state) => state.phase);
                   const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
@@ -1683,17 +1734,29 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   const groupExpansion = useStore((s) => s.groupExpansion);
                   const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
                   const sessionUpdatedAtByAccount = useStore((s) => s.sessionUpdatedAtByAccount);
+                  const sessionsForAccounts = useSessions((state) => state);
+                  const ungroupedAccountKeys = (0, react.useMemo)(() => {
+                        const accounted = new Set(workspaces.flatMap((workspace) => workspace.sessionIds));
+                        const keys = new Set();
+                        for (const id of sessionsForAccounts.ids || []) {
+                              const session = sessionsForAccounts.byId?.[id];
+                              if (session !== void 0 && !accounted.has(id)) keys.add(ungroupedKeyForSource(sourceKeyOf(session)));
+                        }
+                        return [...keys];
+                  }, [sessionsForAccounts, workspaces]);
                   (0, react.useEffect)(() => {
                         if (workspacePhase !== "ready") return;
                         actions.retainAccountKeys([
                               "",
                               FLAT_SESSION_ORDER_KEY,
+                              ...ungroupedAccountKeys,
                               ...workspaces.map((workspace) => workspace.workspaceId)
                         ]);
                   }, [
                         actions.retainAccountKeys,
                         workspacePhase,
-                        workspaces
+                        workspaces,
+                        ungroupedAccountKeys
                   ]);
                   const [query, setQuery] = (0, react.useState)("");
                   const [searchExpanded, setSearchExpanded] = (0, react.useState)(false);
@@ -1792,7 +1855,8 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   const [renaming, setRenaming] = (0, react.useState)(false);
                   const [renameError, setRenameError] = (0, react.useState)(null);
                   const renameTrimmed = renameDraft.trim();
-                  const renameDuplicate = renameTarget !== null && renameTrimmed !== "" && renameTrimmed !== renameTarget.currentTitle && workspaces.some((w) => w.title === renameTrimmed);
+                  const renameTargetSourceId = renameTarget === null ? void 0 : workspaces.find((w) => w.workspaceId === renameTarget.workspaceId)?.sourceId;
+                  const renameDuplicate = renameTarget !== null && renameTrimmed !== "" && renameTrimmed !== renameTarget.currentTitle && workspaces.some((w) => w.workspaceId !== renameTarget.workspaceId && w.sourceId === renameTargetSourceId && w.title === renameTrimmed);
                   const renameBlocked = renaming || renameTrimmed === "" || renameTarget === null || renameTrimmed === renameTarget.currentTitle || renameDuplicate;
                   const closeRename = () => {
                         if (renaming) return;
@@ -1966,7 +2030,8 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                                                             className: WorkspaceBrowser_module_css_default.iconButton,
                                                             "aria-label": t("workspace.add"),
                                                             onClick: () => {
-                                                                  setWsPickerOpen((v) => !v);
+                                                                  if (openWorkspaceAdd !== void 0) openWorkspaceAdd(wsPlusRef);
+                                                                  else setWsPickerOpen((v) => !v);
                                                             },
                                                             children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconProjectAddOutline16, { size: wide ? 16 : 18 })
                                                       })
@@ -2037,6 +2102,13 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                                           useSessions,
                                           onSessionRename,
                                           onSessionArchive,
+                                          onUngroupedArchiveAll: (groupKey, sessionIds) => {
+                                                (async () => {
+                                                      for (const sessionId of sessionIds) await archiveSession(sessionId);
+                                                })().catch((reason) => {
+                                                      console.warn("archive all ungrouped sessions rejected:", groupKey, reason);
+                                                });
+                                          },
                                           forkSession,
                                           workspaces,
                                           groupExpansion,
@@ -2250,6 +2322,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   "delete.pending": "正在删除工作区…",
                   "menu.fork": "分叉会话",
                   "menu.archiveSession": "归档会话",
+                  "menu.archiveAllSessions": "归档全部会话",
                   "sessions.count.one": "{n} 个会话",
                   "sessions.count.other": "{n} 个会话",
                   "actions.workspace.aria": "工作区“{name}”的操作",
@@ -2315,6 +2388,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   "delete.pending": "Deleting workspace…",
                   "menu.fork": "Fork session",
                   "menu.archiveSession": "Archive session",
+                  "menu.archiveAllSessions": "Archive all sessions",
                   "sessions.count.one": "{n} session",
                   "sessions.count.other": "{n} sessions",
                   "actions.workspace.aria": "Workspace actions for {name}",
@@ -2569,7 +2643,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         && typeof data.token === 'string' && data.token !== ''
     }
 
-    async function remoteRpc(sourceId, method, payload = {}) {
+    async function remoteRpc(sourceId, method, payload = {}, signal) {
       const rpcId = `${Date.now()}-${Math.random()}`
       const path = `/api/${method}`
       const url = new URL('/remote-desktop/api/host-api', window.location.origin)
@@ -2579,12 +2653,46 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
+        signal,
       })
       const parsed = await response.json().catch(() => null)
       if (!response.ok) throw new Error(parsed?.error?.message || `HTTP ${response.status}`)
       if (parsed?.rpcId !== rpcId) throw new Error(`${method} rpcId mismatch`)
       if (parsed?.result?.ok !== true) throw new Error(parsed?.result?.error?.message || `${method} failed`)
       return parsed.result.value
+    }
+
+    async function browseRemoteDirectory(sourceId, path, hidden, signal) {
+      const url = new URL('/remote-desktop/api/browse', window.location.origin)
+      url.searchParams.set('id', sourceId)
+      url.searchParams.set('hidden', hidden ? '1' : '0')
+      if (path) url.searchParams.set('path', path)
+      const response = await fetch(url, { signal })
+      const parsed = await response.json().catch(() => null)
+      if (!response.ok || parsed?.ok !== true) throw new Error(parsed?.error?.message || `HTTP ${response.status}`)
+      return { path: parsed.path, home: parsed.home, parent: parsed.parent, entries: parsed.entries || [] }
+    }
+
+    function pathSegments(path) {
+      return String(path || '/').split('/').filter(Boolean)
+    }
+
+    function joinPosix(parts) {
+      return `/${parts.filter(Boolean).join('/')}`.replace(/\/+$|^$/g, '') || '/'
+    }
+
+    function remoteBreadcrumbs(path, home) {
+      const current = String(path || '/')
+      const homePath = String(home || '')
+      if (homePath !== '' && (current === homePath || current.startsWith(`${homePath}/`))) {
+        const relative = current === homePath ? [] : current.slice(homePath.length + 1).split('/').filter(Boolean)
+        const items = [{ label: 'Home', path: homePath }]
+        const base = pathSegments(homePath)
+        relative.forEach((part, index) => items.push({ label: part, path: joinPosix([...base, ...relative.slice(0, index + 1)]) }))
+        return items
+      }
+      const parts = pathSegments(current)
+      return [{ label: '/', path: '/' }, ...parts.map((part, index) => ({ label: part, path: joinPosix(parts.slice(0, index + 1)) }))]
     }
 
     function rowSessionId(row) {
@@ -2602,6 +2710,49 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       void store.refreshSnapshot(sourceId)
     }
 
+    async function refreshRemoteAfterMutation(sourceId) {
+      await store.refreshSnapshot(sourceId)
+    }
+
+    async function renameRemoteWorkspace(sourceId, workspaceId, title) {
+      await remoteRpc(sourceId, 'workspace.rename', { workspaceId, title })
+      await refreshRemoteAfterMutation(sourceId)
+    }
+
+    async function deleteRemoteWorkspace(sourceId, workspaceId) {
+      await remoteRpc(sourceId, 'workspace.delete', { workspaceId })
+      await refreshRemoteAfterMutation(sourceId)
+    }
+
+    async function insertRemoteWorkspaceBefore(sourceId, workspaceId, beforeWorkspaceId) {
+      await remoteRpc(sourceId, 'workspace.insertBefore', { workspaceId, ...(beforeWorkspaceId === undefined ? {} : { beforeWorkspaceId }) })
+      await refreshRemoteAfterMutation(sourceId)
+    }
+
+    async function renameRemoteSession(sourceId, sessionId, title) {
+      await remoteRpc(sourceId, 'session.rename', { sessionId, title })
+      await refreshRemoteAfterMutation(sourceId)
+    }
+
+    function forkRemoteSession(sourceId, sessionId) {
+      remoteRpc(sourceId, 'session.fork', { sessionId }).then((child) => {
+        store.openRemote(sourceId, child.sessionId)
+        void store.refreshSnapshot(sourceId)
+      }).catch((reason) => {
+        console.warn('remote session fork rejected:', reason)
+      })
+    }
+
+    async function archiveRemoteSession(sourceId, sessionId) {
+      await remoteRpc(sourceId, 'workspace.archiveSession', { sessionId })
+      await refreshRemoteAfterMutation(sourceId)
+    }
+
+    async function insertRemoteSessionBefore(sourceId, workspaceId, sessionId, beforeSessionId) {
+      await remoteRpc(sourceId, 'workspace.insertSessionBefore', { workspaceId, sessionId, ...(beforeSessionId === undefined ? {} : { beforeSessionId }) })
+      await refreshRemoteAfterMutation(sourceId)
+    }
+
     function publicSummary(source) {
       return { id: source.id, label: source.label, state: source.state, error: source.error ?? null }
     }
@@ -2609,7 +2760,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
     function byWorkspace(snapshot) {
       if (!snapshot || snapshot.state === 'error') return []
       const sessions = snapshot.sessions?.items || []
-      const byId = new Map(sessions.map(row => [row.sessionId, row]))
+      const byId = new Map(sessions.map(row => [rowSessionId(row), row]))
       const archived = new Set(snapshot.workspaces?.archivedSessionIds || [])
       return (snapshot.workspaces?.items || []).map(ws => ({
         ...ws,
@@ -2658,6 +2809,20 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         .rd-hostButtonLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
         .rd-setupHint { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; margin-top: 8px; }
         .rd-addError { color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px; white-space: pre-wrap; margin-top: 8px; }
+        .rd-browsePanel { margin-top: 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-specific-sidebar-fill); overflow: hidden; }
+        .rd-browseToolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+        .rd-breadcrumbs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+        .rd-breadcrumbButton { flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); padding: 3px 6px; font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; }
+        .rd-breadcrumbButton:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+        .rd-breadcrumbSep { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+        .rd-hiddenToggle { flex: none; }
+        .rd-directoryList { max-height: min(320px, 42vh); overflow-y: auto; padding: 6px; }
+        .rd-directoryRow { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 34px; border: none; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); padding: 0 8px; font: inherit; text-align: left; cursor: pointer; }
+        .rd-directoryRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+        .rd-directoryName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rd-currentPath { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; margin-top: 8px; word-break: break-all; }
+        .rd-browseStatus { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; padding: 18px 10px; text-align: center; }
+        .rd-browseStatusError { color: var(--dsw-alias-state-error-primary); }
         @keyframes rd-row-in { from { opacity: 0; } }
         @media (prefers-reduced-motion: reduce) { .rd-sessionNode { animation: none; } }
       `
@@ -2689,13 +2854,14 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       for (const [name, value] of Object.entries(args)) text = text.replaceAll(`{${name}}`, String(value))
       return text
     }
-    function officialSessionSummary(row, id, sourceKind, sourceId, rawSessionId) {
+    function officialSessionSummary(row, id, sourceKind, sourceId, rawSessionId, remoteMarker) {
       return {
         ...row,
         id,
         sourceKind,
         sourceId,
         rawSessionId,
+        remoteMarker,
         displayTitle: titleOfSession(row),
         blank: false,
         running: Boolean(row.running),
@@ -2708,8 +2874,10 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
     }
     function OfficialWorkspaceForkBrowser(props) {
       const remote = useRemote(s => s)
-      const addButtonRef = useRef(null)
+      const [addAnchor, setAddAnchor] = useState(null)
+      const addButtonRef = useMemo(() => ({ current: addAnchor }), [addAnchor])
       const [pickerOpen, setPickerOpen] = useState(false)
+      const [splitterOpenNonce, setSplitterOpenNonce] = useState(null)
       useEffect(() => installCss(), [])
       useEffect(() => {
         void store.refreshSources()
@@ -2736,7 +2904,8 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
               const raw = rowSessionId(row)
               if (!raw) continue
               const id = remoteKey(source.id, raw)
-              byId[id] = officialSessionSummary(row, id, 'remote', source.id, raw)
+              const remoteMarker = { id: source.id, label: source.label, state: source.state || 'connected', color: remoteHostColor(source.id) }
+              byId[id] = officialSessionSummary(row, id, 'remote', source.id, raw, remoteMarker)
               ids.push(id)
             }
           }
@@ -2793,8 +2962,30 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         if (remoteId) void startRemoteWorkspace(remoteId.sourceId, remoteId.id)
         else props.startLocalWorkspace?.(workspaceId)
       }
+      const searchCombinedSessions = async (query, signal) => {
+        const localSearch = props.searchSessions || (async () => ({ items: [], hasMore: false }))
+        const localResult = await localSearch(query, signal)
+        const remoteResults = await Promise.all(remote.sources.filter(source => source.state === 'connected').map(async source => {
+          try {
+            const result = await remoteRpc(source.id, 'session.search', { query }, signal)
+            return {
+              items: (result.items || []).map(item => ({ ...item, sessionId: remoteKey(source.id, rowSessionId(item) || item.sessionId) })),
+              hasMore: Boolean(result.hasMore),
+            }
+          } catch (error) {
+            if (signal?.aborted) throw error
+            console.warn('remote session search rejected:', error)
+            return { items: [], hasMore: false }
+          }
+        }))
+        return {
+          items: [...(localResult.items || []), ...remoteResults.flatMap(result => result.items)],
+          hasMore: Boolean(localResult.hasMore) || remoteResults.some(result => result.hasMore),
+        }
+      }
       const addPicker = h(WorkspaceAddSplitter, {
         open: pickerOpen,
+        openSplitterNonce: splitterOpenNonce,
         onClose: () => setPickerOpen(false),
         anchorRef: addButtonRef,
         selectedId: undefined,
@@ -2812,24 +3003,60 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
           useWorkspaces: useCombinedWorkspaces,
           startSession,
           open,
-          searchSessions: props.searchSessions || (async () => ({ items: [], hasMore: false })),
+          searchSessions: searchCombinedSessions,
           searchResultLimit: props.searchResultLimit || 50,
-          renameSession: async (sessionId, title) => { if (!decodeSession(sessionId)) await props.renameSession?.(sessionId, title) },
-          forkSession: sessionId => { if (!decodeSession(sessionId)) props.forkSession?.(sessionId) },
-          renameWorkspace: async (workspaceId, title) => { if (!decodeWorkspace(workspaceId)) await props.renameLocalWorkspace?.(workspaceId, title) },
-          deleteWorkspace: async workspaceId => { if (!decodeWorkspace(workspaceId)) await props.deleteLocalWorkspace?.(workspaceId) },
-          insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
-            if (!decodeWorkspace(workspaceId) && !decodeWorkspace(beforeWorkspaceId)) await props.insertWorkspaceBefore?.(workspaceId, beforeWorkspaceId)
+          renameSession: async (sessionId, title) => {
+            const remoteId = decodeSession(sessionId)
+            if (remoteId) await renameRemoteSession(remoteId.sourceId, remoteId.id, title)
+            else await props.renameSession?.(sessionId, title)
           },
-          archiveSession: async sessionId => { if (!decodeSession(sessionId)) await props.archiveSession?.(sessionId) },
+          forkSession: sessionId => {
+            const remoteId = decodeSession(sessionId)
+            if (remoteId) forkRemoteSession(remoteId.sourceId, remoteId.id)
+            else props.forkSession?.(sessionId)
+          },
+          renameWorkspace: async (workspaceId, title) => {
+            const remoteId = decodeWorkspace(workspaceId)
+            if (remoteId) await renameRemoteWorkspace(remoteId.sourceId, remoteId.id, title)
+            else await props.renameLocalWorkspace?.(workspaceId, title)
+          },
+          deleteWorkspace: async workspaceId => {
+            const remoteId = decodeWorkspace(workspaceId)
+            if (remoteId) await deleteRemoteWorkspace(remoteId.sourceId, remoteId.id)
+            else await props.deleteLocalWorkspace?.(workspaceId)
+          },
+          insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
+            const remoteId = decodeWorkspace(workspaceId)
+            const beforeRemoteId = decodeWorkspace(beforeWorkspaceId)
+            if (remoteId) {
+              if (beforeWorkspaceId !== undefined && beforeRemoteId?.sourceId !== remoteId.sourceId) throw new Error('Cannot reorder remote workspaces across sources')
+              await insertRemoteWorkspaceBefore(remoteId.sourceId, remoteId.id, beforeRemoteId?.id)
+            } else if (beforeRemoteId === null) await props.insertWorkspaceBefore?.(workspaceId, beforeWorkspaceId)
+            else throw new Error('Cannot reorder local workspaces into a remote source')
+          },
+          archiveSession: async sessionId => {
+            const remoteId = decodeSession(sessionId)
+            if (remoteId) await archiveRemoteSession(remoteId.sourceId, remoteId.id)
+            else await props.archiveSession?.(sessionId)
+          },
           insertSessionBefore: async (workspaceId, sessionId, beforeSessionId) => {
-            if (!decodeWorkspace(workspaceId) && !decodeSession(sessionId) && !decodeSession(beforeSessionId)) await props.insertSessionBefore?.(workspaceId, sessionId, beforeSessionId)
+            const workspaceRemoteId = decodeWorkspace(workspaceId)
+            const sessionRemoteId = decodeSession(sessionId)
+            const beforeRemoteId = decodeSession(beforeSessionId)
+            if (workspaceRemoteId || sessionRemoteId || beforeRemoteId) {
+              if (!workspaceRemoteId || !sessionRemoteId || workspaceRemoteId.sourceId !== sessionRemoteId.sourceId || (beforeSessionId !== undefined && beforeRemoteId?.sourceId !== workspaceRemoteId.sourceId)) throw new Error('Cannot reorder sessions across sources')
+              await insertRemoteSessionBefore(workspaceRemoteId.sourceId, workspaceRemoteId.id, sessionRemoteId.id, beforeRemoteId?.id)
+            } else await props.insertSessionBefore?.(workspaceId, sessionId, beforeSessionId)
           },
           createWorkspace: props.createLocalWorkspace,
           t: workspaceT,
+          openWorkspaceAdd: (anchorRef) => {
+            setAddAnchor(anchorRef?.current ?? null)
+            setPickerOpen(false)
+            setSplitterOpenNonce(`${Date.now()}-${Math.random()}`)
+          },
         }),
-        pickerOpen ? addPicker : null,
-        h('button', { ref: addButtonRef, type: 'button', style: { position: 'fixed', left: -10000, top: -10000 }, 'aria-hidden': 'true' })
+        (pickerOpen || splitterOpenNonce !== null) ? addPicker : null
       )
     }
 
@@ -2843,6 +3070,11 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       const anchorRect = props.anchorRef?.current?.getBoundingClientRect?.()
       const flowAvailable = props.useDirectoryFlow ? props.useDirectoryFlow(Boolean) : false
       useEffect(() => { if (!isRemoteDesktopIframe()) void store.refreshSources() }, [])
+      useEffect(() => {
+        if (props.openSplitterNonce === undefined || props.openSplitterNonce === null) return
+        setMessage('')
+        setSplitterOpen(true)
+      }, [props.openSplitterNonce])
       const closePicker = () => { setMessage(''); props.onClose?.() }
       const remoteWorkspaceRows = []
       if (!isRemoteDesktopIframe()) {
@@ -2865,7 +3097,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
           icon: h(IconFolderClose16, { size: 16 }),
         })),
       ]
-      const footerItems = [{ id: 'add-workspace', label: 'Add workspace…', icon: h(IconPlusOutline16, { size: 16 }) }]
+      const footerItems = [{ id: 'add-workspace', label: 'Add workspace…', icon: h(IconProjectAddOutline16, { size: 16 }) }]
       const openRemoteWorkspace = async (sourceId, workspaceId) => {
         setMessage('')
         closePicker()
@@ -2974,7 +3206,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
               )
             ),
             h('button', { type: 'button', className: 'rd-addChoice', onClick: openRemoteFlow, 'data-rd-add-remote': 'true' },
-              h('span', { className: 'rd-addChoiceIcon' }, h(IconPlusOutline16, { size: 16 })),
+              h('span', { className: 'rd-addChoiceIcon' }, h(IconProjectAddOutline16, { size: 16 })),
               h('span', null,
                 h('span', { className: 'rd-addChoiceTitle' }, 'Remote workspace'),
                 h('span', { className: 'rd-addChoiceDesc' }, isRemoteDesktopIframe() ? 'Ask the main host to create one on a connected remote.' : 'Create one on a connected remote host.')
@@ -2990,34 +3222,60 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
     function RemoteSetupModal() {
       const remote = useRemote(s => s)
       const [hostId, setHostId] = useState('')
-      const [path, setPath] = useState('')
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
       const [hostMenuOpen, setHostMenuOpen] = useState(false)
+      const [showHidden, setShowHidden] = useState(false)
+      const [browse, setBrowse] = useState({ status: 'idle', path: '', home: '', parent: undefined, entries: [], error: '' })
       const open = remote.remoteSetup.open
       const connected = remote.sources.filter(source => source.state === 'connected')
       const selected = connected.find(source => source.id === hostId) || connected[0]
       useEffect(() => {
         if (!open) return
         setHostId(connected[0]?.id || '')
-        setPath('')
+        setShowHidden(false)
+        setBrowse({ status: 'idle', path: '', home: '', parent: undefined, entries: [], error: '' })
         setError('')
       }, [open, connected.map(source => source.id).join('\u0000')])
+      useEffect(() => {
+        if (!open || selected === undefined) return
+        const controller = new AbortController()
+        setBrowse(current => ({ ...current, status: 'loading', error: '' }))
+        browseRemoteDirectory(selected.id, undefined, showHidden, controller.signal).then(result => {
+          if (controller.signal.aborted) return
+          setBrowse({ status: 'ready', path: result.path, home: result.home, parent: result.parent, entries: result.entries, error: '' })
+        }).catch(reason => {
+          if (controller.signal.aborted) return
+          setBrowse(current => ({ ...current, status: 'error', error: reason instanceof Error ? reason.message : String(reason) }))
+        })
+        return () => controller.abort()
+      }, [open, selected?.id])
       const close = (status = 'cancelled', message = '') => {
         setHostMenuOpen(false)
         setBusy(false)
         setError('')
         store.closeRemoteSetup(status, message)
       }
+      const browseTo = (nextPath, hidden = showHidden) => {
+        const sourceId = selected?.id || hostId
+        if (sourceId === '') return
+        const controller = new AbortController()
+        setBrowse(current => ({ ...current, status: 'loading', error: '' }))
+        browseRemoteDirectory(sourceId, nextPath, hidden, controller.signal).then(result => {
+          setBrowse({ status: 'ready', path: result.path, home: result.home, parent: result.parent, entries: result.entries, error: '' })
+        }).catch(reason => {
+          setBrowse(current => ({ ...current, status: 'error', error: reason instanceof Error ? reason.message : String(reason) }))
+        })
+      }
       const submit = async () => {
         const sourceId = selected?.id || hostId
-        const trimmed = path.trim()
+        const selectedPath = browse.path
         if (sourceId === '') { setError('Connect a remote host before adding a remote workspace.'); return }
-        if (trimmed === '') { setError('Remote path is required.'); return }
+        if (selectedPath === '') { setError('Choose a remote directory before adding a workspace.'); return }
         setBusy(true)
         setError('')
         try {
-          const result = await remoteRpc(sourceId, 'workspace.create', { path: trimmed })
+          const result = await remoteRpc(sourceId, 'workspace.create', { path: selectedPath })
           await store.refreshSnapshot(sourceId)
           await startRemoteWorkspace(sourceId, result.workspace.workspaceId)
           close('opened')
@@ -3031,18 +3289,20 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       const hostItems = connected.length === 0
         ? [{ id: 'no-host', label: 'No connected hosts', disabled: true }]
         : connected.map(source => ({ id: source.id, label: source.label }))
+      const breadcrumbs = remoteBreadcrumbs(browse.path, browse.home)
+      const browseBusy = browse.status === 'loading'
       return h(Modal, {
         open,
         onClose: () => close('cancelled'),
         title: 'Add remote workspace',
         closeLabel: 'Close',
-        description: 'Choose a connected host and enter an absolute path on that host.',
+        description: 'Choose a connected host and browse to the remote folder to use as a workspace.',
         footer: h(React.Fragment, null,
           h(Button, { variant: 'outline', disabled: busy, onClick: () => close('cancelled') }, 'Cancel'),
-          h(Button, { variant: 'primary', disabled: busy || connected.length === 0, onClick: () => void submit(), 'data-rd-add-workspace-submit': 'true' }, busy ? 'Adding…' : 'Add')
+          h(Button, { variant: 'primary', disabled: busy || browseBusy || connected.length === 0 || browse.path === '', onClick: () => void submit(), 'data-rd-add-workspace-submit': 'true' }, busy ? 'Adding…' : 'Create workspace here')
         ),
       },
-        h('div', { 'data-rd-remote-workspace-setup': 'true' },
+        h('div', { 'data-rd-remote-workspace-setup': 'true', 'data-rd-remote-directory-picker': 'true' },
           h('div', { className: 'rd-setupField' },
             h('div', { className: 'rd-setupLabel' }, 'Host'),
             h(Menu, {
@@ -3057,11 +3317,31 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
               onClose: () => setHostMenuOpen(false),
             })
           ),
-          h('label', { className: 'rd-setupField' },
-            h('span', { className: 'rd-setupLabel' }, 'Remote absolute path'),
-            h(Input, { value: path, disabled: busy, placeholder: '/path/to/project', onChange: e => setPath(e.target.value), onKeyDown: e => { if (e.key === 'Enter') void submit() } })
-          ),
           connected.length === 0 && h('div', { className: 'rd-setupHint' }, 'Connect a host in Settings → Remote Desktop before creating a remote workspace.'),
+          connected.length > 0 && h('div', { className: 'rd-browsePanel' },
+            h('div', { className: 'rd-browseToolbar' },
+              h('div', { className: 'rd-breadcrumbs', 'data-rd-remote-breadcrumbs': 'true' },
+                breadcrumbs.map((item, index) => h(React.Fragment, { key: `${item.path}:${index}` },
+                  index > 0 && h('span', { className: 'rd-breadcrumbSep', 'aria-hidden': 'true' }, '/'),
+                  h('button', { type: 'button', className: 'rd-breadcrumbButton', disabled: busy || browseBusy, title: item.path, onClick: () => browseTo(item.path), 'data-rd-breadcrumb-path': item.path }, item.label)
+                ))
+              ),
+              h(Button, { variant: showHidden ? 'primary' : 'outline', className: 'rd-hiddenToggle', disabled: busy || browseBusy, onClick: () => { const next = !showHidden; setShowHidden(next); browseTo(browse.path || undefined, next) }, 'data-rd-show-hidden': showHidden ? 'true' : 'false' }, 'Show hidden')
+            ),
+            h('div', { className: 'rd-directoryList', 'data-rd-remote-directory-list': 'true' },
+              browseBusy && h('div', { className: 'rd-browseStatus', role: 'status' }, 'Loading remote folders…'),
+              browse.status === 'error' && h('div', { className: 'rd-browseStatus rd-browseStatusError', role: 'alert' },
+                h('div', null, browse.error || 'Cannot read this directory.'),
+                h(Button, { variant: 'outline', disabled: busy, onClick: () => browseTo(browse.path || undefined), 'data-rd-browse-retry': 'true' }, 'Retry')
+              ),
+              browse.status === 'ready' && browse.entries.length === 0 && h('div', { className: 'rd-browseStatus' }, 'No folders in this directory.'),
+              browse.status === 'ready' && browse.entries.map(entry => h('button', { key: entry.path, type: 'button', className: 'rd-directoryRow', disabled: busy, onClick: () => browseTo(entry.path), 'data-rd-directory-path': entry.path },
+                h(IconFolderClose16, { size: 16 }),
+                h('span', { className: 'rd-directoryName' }, entry.name)
+              ))
+            )
+          ),
+          browse.path && h('div', { className: 'rd-currentPath', 'data-rd-selected-remote-path': browse.path }, browse.path),
           error && h('div', { className: 'rd-addError', role: 'alert' }, error)
         )
       )
@@ -3069,7 +3349,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
 
     function RemoteOverlay() {
       const remote = useRemote(s => s)
-      const { sources, active, pendingOpen } = remote
+      const { sources, active, pendingOpen, companionReady } = remote
       const [host, setHost] = useState(null)
       const [left, setLeftState] = useState(0)
       const leftRef = useRef(0)
@@ -3148,7 +3428,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
         send()
         const retry = setTimeout(send, 500)
         return () => clearTimeout(retry)
-      }, [source?.id, source?.iframeUrl, source?.token, pendingOpen?.nonce])
+      }, [source?.id, source?.iframeUrl, source?.token, pendingOpen?.nonce, source === undefined ? undefined : companionReady[source.id]])
 
       const overlay = h('div', { style: { ...styles.overlay, left, display: source ? 'block' : 'none' }, 'data-rd-overlay-active': source ? 'true' : 'false' },
         sources.filter(s => s.state === 'connected' && s.iframeUrl).map(s => h('iframe', {
