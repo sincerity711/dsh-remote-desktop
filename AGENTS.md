@@ -26,6 +26,24 @@ npm run acceptance:all  # check + P0 + P1
 
 Run the smallest command that proves the change. Do not run acceptance commands unless the needed `win-wsl` SSH/browser prerequisites are available.
 
+## Stable test homes
+
+Use isolated, repeatable DSH homes for every manual or automated local/remote run. Never point tests at the developer's default `~/.dsh` on the local machine or on any SSH host.
+
+- Local manual web profile: `.acceptance/dev-home-30888` with port `30888`.
+- Local automated acceptance profile: `.acceptance/local-home`.
+- Remote DSH profile on each SSH host: `$HOME/.dsh-remote-desktop-test` with remote web port `30800`.
+- Remote fixture data on each SSH host: `/tmp/dsh-remote-desktop-sentinel`.
+- If two test profiles must run on the same remote host at once, suffix both remote paths with the SSH host id, for example `$HOME/.dsh-remote-desktop-test-win-wsl` and `/tmp/dsh-remote-desktop-sentinel-win-wsl`.
+
+Manual local launch example:
+
+```sh
+DSH_HOME=$PWD/.acceptance/dev-home-30888 \
+  DSH_TELEMETRY_DISABLED=1 \
+  dsh --profile web --host 127.0.0.1 --port 30888 --trusted-host 127.0.0.1:30888
+```
+
 ## Conventions
 
 - Keep files ESM and dependency-light; packages currently ship `lib/` JavaScript directly.
