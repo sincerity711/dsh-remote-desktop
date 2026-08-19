@@ -3212,11 +3212,13 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
           h('div', { style: styles.hint }, [source.sshUser, source.sshHost].filter(Boolean).join('@') || source.sshAlias || source.id),
           source.error && h('div', { style: styles.error }, source.error),
           h('div', { style: styles.actions },
-            source.state === 'connected' && source.iframeUrl && h(Button, { variant: 'primary', 'data-rd-settings-open-native': source.id, onClick: () => openNative(source) }, `Open ${source.label} DSH`),
+            h(Button, { variant: 'primary', disabled: source.state !== 'connected' || !source.iframeUrl, 'data-rd-settings-open-native': source.id, onClick: () => openNative(source) }, `Open ${source.label} DSH`),
             h(Button, { variant: 'outline', 'data-rd-settings-connect': source.id, onClick: () => void connect(source.id) }, 'Connect'),
             h(Button, { variant: 'outline', 'data-rd-settings-disconnect': source.id, onClick: () => void disconnect(source.id) }, 'Disconnect')
           ),
-          source.state === 'connected' && source.iframeUrl && h('a', { className: 'rd-settingsNativeUrl', href: nativeRemoteUrl(source.iframeUrl), target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, nativeRemoteUrl(source.iframeUrl))
+          source.state === 'connected' && source.iframeUrl
+            ? h('a', { className: 'rd-settingsNativeUrl', href: nativeRemoteUrl(source.iframeUrl), target: '_blank', rel: 'noopener noreferrer', 'data-rd-settings-native-link': 'true' }, nativeRemoteUrl(source.iframeUrl))
+            : h('div', { className: 'rd-settingsNativeUrl', 'data-rd-settings-native-placeholder': 'true' }, 'Connect to create a forwarded DSH Web URL for this host.')
         ))
       )
     }
