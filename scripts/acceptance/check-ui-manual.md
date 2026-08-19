@@ -1,6 +1,6 @@
 # dsh-remote-desktop manual UI checklist
 
-Run this checklist when layout, iframe container styling, sidebar shell behavior, settings Host filter behavior, or Better Sidebar visual integration changes. It is not required for every P0 acceptance run.
+Run this checklist when layout, iframe container styling, sidebar shell behavior, settings Host switcher behavior, or Better Sidebar visual integration changes. It is not required for every P0 acceptance run.
 
 - [ ] The local unified sidebar remains the only expanded left sidebar in the top-level page.
 - [ ] Local and remote workspaces appear as project rows, not grouped by source machine.
@@ -11,5 +11,8 @@ Run this checklist when layout, iframe container styling, sidebar shell behavior
 - [ ] The remote iframe does not show a second expanded left sidebar.
 - [ ] Remote Better Sidebar is visible, not clipped, and visually belongs to the remote iframe.
 - [ ] Local Better Sidebar and remote Better Sidebar cannot be mistaken for the same instance.
+- [ ] Settings keeps the official modal, rail, spacing, token, and control style.
+- [ ] The Settings Host switcher is at the top of the left rail and clearly shows Local or the selected remote host.
 - [ ] Remote Desktop settings lists SSH config hosts and connected/not connected status.
+- [ ] Selecting a connected remote host embeds that host's own Settings surface and the iframe does not show the remote app sidebar.
 - [ ] Failure messages are understandable without reading terminal logs.

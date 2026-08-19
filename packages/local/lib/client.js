@@ -15,34 +15,6 @@ window.__ModuleLoader__.load({
 
     const LOCAL_SOURCE_ID = 'local'
     const ACTIVE_CHANGED = 'dsh-remote-desktop/active-changed'
-    let settingsHostId = 'local'
-    let fetchPatched = false
-
-    function setSettingsHost(id) {
-      settingsHostId = id || 'local'
-      window.__dshRemoteDesktopSettingsHost = settingsHostId
-    }
-
-    function isHostScopedSettingsApi(pathname) {
-      return pathname.startsWith('/api/settings.') || pathname.startsWith('/api/credentials.') || pathname.startsWith('/api/llm.')
-    }
-
-    function installHostApiFetchPatch() {
-      if (fetchPatched) return
-      fetchPatched = true
-      const originalFetch = window.fetch.bind(window)
-      window.fetch = (input, init) => {
-        if (settingsHostId === 'local') return originalFetch(input, init)
-        const url = new URL(typeof input === 'string' ? input : input.url, window.location.origin)
-        if (url.origin !== window.location.origin || !isHostScopedSettingsApi(url.pathname)) return originalFetch(input, init)
-        const next = new URL('/remote-desktop/api/host-api', window.location.origin)
-        next.searchParams.set('id', settingsHostId)
-        next.searchParams.set('path', `${url.pathname}${url.search}`)
-        if (typeof input === 'string') return originalFetch(String(next), init)
-        return originalFetch(new Request(String(next), input), init)
-      }
-    }
-
     function createStore() {
       let snapshot = {
         sources: [],
@@ -282,8 +254,15 @@ window.__ModuleLoader__.load({
         .rd-settingsOverlay { position: fixed; inset: 0; z-index: 2147482500; display: flex; align-items: center; justify-content: center; }
         .rd-settingsMask { position: absolute; inset: 0; background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,.24)); backdrop-filter: var(--dsw-mask-blur, blur(8px)); }
         .rd-settingsPanel { position: relative; z-index: 1; display: flex; width: 800px; height: min(800px, calc(100vh - 48px)); max-width: calc(100vw - 48px); border-radius: 24px; overflow: hidden; background: var(--dsw-alias-bg-layer-2, #fff); box-shadow: var(--dsw-shadow-lv3, 0 10px 40px rgba(0,0,0,.18)); color: var(--dsw-alias-label-primary); }
+        .rd-settingsPanel.rd-settingsRemotePanel { width: 1080px; }
         .rd-settingsNav { flex: none; display: flex; flex-direction: column; gap: 18px; width: 188px; padding: 22px 12px 0; box-sizing: border-box; }
         .rd-settingsTitle { padding: 0 12px; font-size: 16px; line-height: 24px; font-weight: 500; }
+        .rd-settingsHostSlot { display: flex; flex-direction: column; gap: 6px; padding: 0 6px; }
+        .rd-settingsHostLabel { padding: 0 6px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+        .rd-settingsHostButton { justify-content: space-between; width: 100%; }
+        .rd-settingsHostButtonText { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+        .rd-settingsHostOption { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+        .rd-settingsHostOptionText { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .rd-settingsNavList { display: flex; flex-direction: column; gap: 4px; }
         .rd-settingsNavCell { display: flex; align-items: center; gap: 8px; height: 40px; padding: 9px 16px 9px 12px; box-sizing: border-box; border: none; border-radius: 12px; background: transparent; cursor: pointer; color: inherit; font: inherit; font-size: 14px; line-height: 22px; text-align: left; }
         .rd-settingsNavCell:hover { background: var(--dsw-specific-sidebar-nav-item-hover, var(--dsw-alias-interactive-bg-hover)); }
@@ -292,9 +271,16 @@ window.__ModuleLoader__.load({
         .rd-settingsNavLabel { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .rd-settingsContent { flex: 1; min-width: 0; display: flex; flex-direction: column; }
         .rd-settingsHeader { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 54px; padding: 20px 14px 8px 10px; box-sizing: border-box; }
+        .rd-settingsActiveText { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
         .rd-settingsClose { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 28px; background: transparent; cursor: pointer; color: inherit; font-size: 18px; }
         .rd-settingsClose:hover { background: var(--dsw-alias-interactive-bg-hover); }
         .rd-settingsOptions { flex: 1; min-height: 0; padding: 0 24px 24px; overflow-y: auto; }
+        .rd-settingsOptions.rd-settingsRemoteOptions { padding: 0; overflow: hidden; }
+        .rd-settingsRemoteFrame { display: block; width: 100%; height: 100%; border: 0; background: var(--dsw-alias-bg-layer-2); }
+        .rd-settingsState { margin: 0 24px 24px; padding: 18px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+        .rd-settingsStateTitle { font-size: 16px; line-height: 24px; font-weight: 520; margin-bottom: 6px; }
+        .rd-settingsStateBody { color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; }
+        .rd-settingsStateActions { display: flex; gap: 8px; margin-top: 14px; }
         .rd-pickerMenu { position: fixed; z-index: 2147482600; min-width: 260px; max-width: min(360px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); }
         .rd-addChoiceGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
         .rd-addChoice { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 92px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
@@ -789,6 +775,13 @@ window.__ModuleLoader__.load({
       return String(u)
     }
 
+    function withSettingsView(url) {
+      const u = new URL(withParent(url))
+      u.searchParams.set('dshRemoteDesktop', '1')
+      u.searchParams.set('view', 'settings')
+      return String(u)
+    }
+
 
     function slotLabel(label) {
       if (typeof label === 'function') return String(label())
@@ -799,11 +792,14 @@ window.__ModuleLoader__.load({
       const rows = props.useSettingsSections(s => s)
       const [open, setOpen] = useState(false)
       const [activeId, setActiveId] = useState(undefined)
-      const [activeHostId, setActiveHostIdState] = useState('local')
+      const [activeHostId, setActiveHostId] = useState(LOCAL_SOURCE_ID)
+      const localActive = activeHostId === LOCAL_SOURCE_ID
       const active = rows.find(row => row.id === activeId)?.id ?? rows[0]?.id
-      const setActiveHostId = (id) => { setSettingsHost(id); setActiveHostIdState(id) }
-      const close = () => { setSettingsHost('local'); setActiveHostIdState('local'); setOpen(false); setActiveId(undefined) }
-      useEffect(() => () => setSettingsHost('local'), [])
+      const close = () => { setActiveHostId(LOCAL_SOURCE_ID); setOpen(false); setActiveId(undefined) }
+      useEffect(() => {
+        if (!open) return
+        void store.refreshSources()
+      }, [open])
       useEffect(() => {
         if (!open) return
         const onKeyDown = (event) => { if (event.key === 'Escape') close() }
@@ -814,20 +810,23 @@ window.__ModuleLoader__.load({
         h('button', { type: 'button', className: 'rd-settingsTrigger', onClick: () => setOpen(true), 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' }, props.wide === false ? '⚙' : '⚙ Settings'),
         open && h('div', { className: 'rd-settingsOverlay', role: 'presentation' },
           h('div', { className: 'rd-settingsMask', onClick: close }),
-          h('div', { className: 'rd-settingsPanel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings' },
+          h('div', { className: `rd-settingsPanel${localActive ? '' : ' rd-settingsRemotePanel'}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings', 'data-rd-settings-active-host': activeHostId },
             h('nav', { className: 'rd-settingsNav' },
               h('div', { className: 'rd-settingsTitle' }, 'Settings'),
-              h('div', { className: 'rd-settingsNavList' }, rows.map(row => h('button', { key: row.id, type: 'button', className: `rd-settingsNavCell${row.id === active ? ' rd-settingsActive' : ''}`, onClick: () => setActiveId(row.id), 'aria-current': row.id === active ? 'true' : undefined },
+              h(SettingsHostFilter, { activeHostId, setActiveHostId }),
+              localActive && h('div', { className: 'rd-settingsNavList' }, rows.map(row => h('button', { key: row.id, type: 'button', className: `rd-settingsNavCell${row.id === active ? ' rd-settingsActive' : ''}`, onClick: () => setActiveId(row.id), 'aria-current': row.id === active ? 'true' : undefined },
                 h('span', { className: 'rd-settingsNavIcon' }, '⚙'),
                 h('span', { className: 'rd-settingsNavLabel' }, row.label)
               )))
             ),
             h('div', { className: 'rd-settingsContent' },
               h('div', { className: 'rd-settingsHeader' },
-                h(SettingsHostFilter, { activeHostId, setActiveHostId }),
+                h('div', { className: 'rd-settingsActiveText' }, localActive ? 'Local settings' : `Remote settings: ${activeHostId}`),
                 h('button', { type: 'button', className: 'rd-settingsClose', onClick: close, 'aria-label': 'Close' }, '×')
               ),
-              h('div', { className: 'rd-settingsOptions' }, active !== undefined && props.renderSlot('settings.section', { close, activeHostId }, { only: active }))
+              localActive
+                ? h('div', { className: 'rd-settingsOptions' }, active !== undefined && props.renderSlot('settings.section', { close }, { only: active }))
+                : h('div', { className: 'rd-settingsOptions rd-settingsRemoteOptions' }, h(RemoteSettingsPane, { activeHostId }))
             )
           )
         )
@@ -838,29 +837,96 @@ window.__ModuleLoader__.load({
       return h('div', { style: styles.settings }, props.renderSlot('settings.general.item', {}))
     }
 
+    function settingsHostMenuLabel(source) {
+      return h('span', { className: 'rd-settingsHostOption', 'data-rd-settings-host-option': source.id },
+        source.id !== LOCAL_SOURCE_ID && h('span', { className: `rd-stateDot rd-state-${source.state || 'disconnected'}`, 'aria-hidden': 'true' }),
+        h('span', { className: 'rd-settingsHostOptionText' }, source.label),
+        source.id !== LOCAL_SOURCE_ID && h('span', { className: 'rd-muted' }, source.state || 'disconnected')
+      )
+    }
+
     function SettingsHostFilter({ activeHostId, setActiveHostId }) {
       const sources = useRemote(s => s.sources)
       const [open, setOpen] = useState(false)
       useEffect(() => { void store.refreshSources() }, [])
-      const active = activeHostId === 'local' ? { id: 'local', label: 'All settings', state: 'connected' } : sources.find(source => source.id === activeHostId)
-      const select = (id) => { setSettingsHost(id); setActiveHostId(id); setOpen(false) }
-      return h('div', { style: styles.hostFilter, 'data-rd-settings-host-filter': 'true' },
-        h('button', { type: 'button', style: styles.hostFilterButton, onClick: () => setOpen(value => !value), 'data-rd-settings-host-filter-button': 'true' },
-          h('span', null, active?.label ?? activeHostId),
-          activeHostId !== 'local' && h('span', { className: `rd-stateDot rd-state-${active?.state ?? 'disconnected'}` }),
-          h('span', null, '⌄')
-        ),
-        open && h('div', { style: styles.hostFilterMenu, 'data-rd-settings-host-filter-menu': 'true' },
-          h('button', { type: 'button', style: styles.hostFilterItem, onClick: () => select('local'), 'data-rd-settings-host-option': 'local' }, 'All settings'),
-          sources.map(source => h('button', { key: source.id, type: 'button', style: styles.hostFilterItem, onClick: () => select(source.id), 'data-rd-settings-host-option': source.id },
-            h('span', null, source.label),
-            h('span', { className: `rd-stateDot rd-state-${source.state}` })
-          ))
-        )
+      const local = { id: LOCAL_SOURCE_ID, label: 'Local', state: 'connected' }
+      const remoteHosts = sources.map(source => ({ id: source.id, label: source.label, state: source.state || 'disconnected' }))
+      const hosts = [local, ...remoteHosts]
+      const active = hosts.find(source => source.id === activeHostId) || local
+      const items = hosts.map(source => ({ id: source.id, label: settingsHostMenuLabel(source) }))
+      return h('div', { className: 'rd-settingsHostSlot', 'data-rd-settings-host-switcher': 'true' },
+        h('div', { className: 'rd-settingsHostLabel' }, 'Host'),
+        h(Menu, {
+          open,
+          anchor: h(Button, {
+            variant: 'outline',
+            className: 'rd-settingsHostButton',
+            onClick: () => setOpen(value => !value),
+            'aria-label': `Settings host, ${active.label}${active.id === LOCAL_SOURCE_ID ? '' : `, ${active.state}`}`,
+            'data-rd-settings-host-filter-button': 'true',
+          },
+            active.id !== LOCAL_SOURCE_ID && h('span', { className: `rd-stateDot rd-state-${active.state}`, 'aria-hidden': 'true' }),
+            h('span', { className: 'rd-settingsHostButtonText' }, active.label),
+            h(IconChevronDownOutline14, { size: 14 })
+          ),
+          items,
+          selectedId: active.id,
+          onSelect: (id) => { setActiveHostId(id); setOpen(false) },
+          onClose: () => setOpen(false),
+        })
       )
     }
 
-    function SettingsSection({ activeHostId = 'local' }) {
+    function RemoteSettingsPane({ activeHostId }) {
+      const sources = useRemote(s => s.sources)
+      const [message, setMessage] = useState('')
+      const [failedFrame, setFailedFrame] = useState(false)
+      const active = sources.find(source => source.id === activeHostId)
+      useEffect(() => { void store.refreshSources() }, [])
+      useEffect(() => { setMessage(''); setFailedFrame(false) }, [activeHostId, active?.iframeUrl])
+      const connect = async () => {
+        setMessage('')
+        try { await store.connect(activeHostId) } catch (e) { setMessage(e.message || String(e)) }
+      }
+      if (active === undefined) {
+        return h(SettingsHostState, { title: `Unknown host: ${activeHostId}`, body: 'This host is no longer available. Choose Local or another host from the Host menu.' })
+      }
+      if (active.state !== 'connected' || !active.iframeUrl) {
+        return h(SettingsHostState, {
+          title: `Connect to ${active.label}`,
+          body: active.error || `Connect ${active.label} to edit that host's own Settings pages.`,
+          action: h(Button, { variant: 'primary', onClick: () => void connect(), 'data-rd-settings-connect': activeHostId }, active.state === 'connecting' ? 'Connecting…' : 'Connect'),
+          message,
+        })
+      }
+      if (failedFrame) {
+        return h(SettingsHostState, {
+          title: `Settings for ${active.label} did not load`,
+          body: 'Retry the settings view or reconnect this host.',
+          action: h(Button, { variant: 'primary', onClick: () => setFailedFrame(false), 'data-rd-settings-retry': activeHostId }, 'Retry'),
+          message,
+        })
+      }
+      return h('iframe', {
+        key: `${active.id}:${active.iframeUrl}`,
+        className: 'rd-settingsRemoteFrame',
+        src: withSettingsView(active.iframeUrl),
+        title: `Settings for ${active.label}`,
+        onError: () => setFailedFrame(true),
+        'data-rd-settings-remote-frame': active.id,
+      })
+    }
+
+    function SettingsHostState({ title, body, action, message }) {
+      return h('div', { className: 'rd-settingsState', 'data-rd-settings-remote-state': 'true' },
+        h('div', { className: 'rd-settingsStateTitle' }, title),
+        h('div', { className: 'rd-settingsStateBody' }, body),
+        message && h('div', { className: 'rd-addError', role: 'alert' }, message),
+        action && h('div', { className: 'rd-settingsStateActions' }, action)
+      )
+    }
+
+    function SettingsSection() {
       const sources = useRemote(s => s.sources)
       const [message, setMessage] = useState('')
       useEffect(() => { void store.refreshSources() }, [])
@@ -869,14 +935,6 @@ window.__ModuleLoader__.load({
       }
       const disconnect = async (id) => {
         try { await store.disconnect(id); setMessage('Disconnected') } catch (e) { setMessage(e.message || String(e)) }
-      }
-      if (activeHostId !== 'local') {
-        const active = sources.find(source => source.id === activeHostId)
-        return h('div', { style: styles.settings, 'data-rd-settings-section': 'true', 'data-rd-settings-remote-host-placeholder': activeHostId },
-          h('h2', null, active?.label ?? activeHostId),
-          h('p', null, active?.state === 'connected' ? 'This remote host is selected in the global Host filter.' : 'This remote host is not connected.'),
-          active?.state !== 'connected' && h('button', { 'data-rd-settings-connect': activeHostId, onClick: () => void connect(activeHostId) }, 'Connect')
-        )
       }
       return h('div', { style: styles.settings, 'data-rd-settings-section': 'true' },
         h('h2', null, 'Remote Desktop'),
@@ -912,7 +970,6 @@ window.__ModuleLoader__.load({
 
     exports.apply = function apply(ctx) {
       const iframeMode = isRemoteDesktopIframe()
-      if (!iframeMode) installHostApiFetchPatch()
       const openLocal = (sessionId) => ctx.sessions.open(sessionId)
       const createLocalWorkspace = input => ctx.workspaces.create(input)
       const flowSource = {
@@ -1000,10 +1057,6 @@ window.__ModuleLoader__.load({
       actions: { display: 'flex', gap: 8, marginTop: 8 },
       hostRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
       hostStatus: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12 },
-      hostFilter: { position: 'relative', display: 'inline-flex' },
-      hostFilterButton: { display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 10px', borderRadius: 10, border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.35))', background: 'var(--dsw-alias-bg-layer-2, #fff)', color: 'inherit' },
-      hostFilterMenu: { position: 'absolute', top: 36, right: 0, minWidth: 180, zIndex: 2, display: 'flex', flexDirection: 'column', gap: 2, padding: 6, borderRadius: 12, background: 'var(--dsw-alias-bg-layer-2, #fff)', boxShadow: 'var(--dsw-shadow-lv3, 0 8px 24px rgba(0,0,0,.18))' },
-      hostFilterItem: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 8px', border: 0, borderRadius: 8, background: 'transparent', color: 'inherit', textAlign: 'left' },
     }
 
     return module.exports

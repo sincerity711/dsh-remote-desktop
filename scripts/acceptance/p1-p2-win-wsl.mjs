@@ -165,25 +165,17 @@ async function settingsUiChecks(page) {
   await page.waitForTimeout(1000)
   await clickButtonContaining(page, 'Remote Desktop').catch(() => {})
   await page.locator('[data-rd-settings-section="true"]').waitFor({ timeout: 10000 })
-  await item('P1-SETTINGS-000', 'global Host filter switches settings context', async () => {
+  await item('P1-SETTINGS-000', 'Host switcher embeds remote settings', async () => {
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator(`[data-rd-settings-host-option="${remotes[1].id}"]`).click()
-    await page.locator(`[data-rd-settings-remote-host-placeholder="${remotes[1].id}"]`).waitFor({ timeout: 10000 })
-    const routed = await page.evaluate(async () => {
-      const rpcId = crypto.randomUUID()
-      const res = await fetch('/api/settings.describe', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type: 'client-request', rpcId, method: 'settings.describe', payload: {} }),
-      })
-      const json = await res.json()
-      return { ok: json.result?.ok === true, namespaceCount: json.result?.value?.namespaces?.length ?? -1 }
-    })
-    if (!routed.ok || routed.namespaceCount < 0) throw new Error(`Host filter did not route settings API to remote: ${JSON.stringify(routed)}`)
+    const frame = page.locator(`[data-rd-settings-remote-frame="${remotes[1].id}"]`)
+    await frame.waitFor({ timeout: 10000 })
+    const src = await frame.getAttribute('src')
+    if (!src?.includes('view=settings')) throw new Error(`remote settings iframe missing view marker: ${src}`)
     await page.locator('[data-rd-settings-host-filter-button="true"]').click()
     await page.locator('[data-rd-settings-host-option="local"]').click()
-    await page.locator('[data-rd-settings-remote-host-placeholder]').waitFor({ state: 'detached', timeout: 10000 })
-    return 'Host filter switched context and routed host API to the selected remote'
+    await page.locator('[data-rd-settings-remote-frame]').waitFor({ state: 'detached', timeout: 10000 })
+    return 'Host switcher embedded selected remote settings and returned to Local'
   })
   await item('P1-SETTINGS-001', 'ssh config hosts listed in UI', async () => {
     for (const remote of remotes) await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).waitFor({ timeout: 10000 })
