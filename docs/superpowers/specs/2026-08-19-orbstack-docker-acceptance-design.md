@@ -227,6 +227,40 @@ remote-b: REMOTE_SENTINEL_B
 
 This is stronger than the current two-profile setup on one SSH destination. It validates two SSH hosts, two remote filesystems, two remote DSH processes, two tunnel targets, two iframe origins, and token isolation between two independent containers.
 
+## Seeded test data
+
+The Docker acceptance environment should create realistic test data for both automated checks and manual inspection. The seed data must be deterministic enough for assertions while still making the retained UI useful after a run.
+
+Seeded data includes:
+
+- one local workspace and at least two local sessions with recognizable titles,
+- one remote workspace and at least two remote sessions on `remote-a`,
+- one remote workspace and at least two remote sessions on `remote-b` for P1 and manual mode,
+- sentinel files inside each remote workspace that prove filesystem and terminal operations are executing on the owning container,
+- short user/assistant transcript content so the session list and opened chats are visually meaningful during manual validation.
+
+Local Ollama may provide the transcript text. The preferred model is the developer's local `minicpm-v4.6:1b` model exposed by Ollama on the macOS host. The Docker acceptance helper checks the host Ollama API when model-backed seed data is requested. If Ollama is unavailable or the model is missing, the helper prints a clear command such as `ollama pull minicpm-v4.6:1b` and falls back to static fixture text for automated acceptance unless the caller explicitly requested strict model seeding.
+
+Model-backed data is not part of the P0/P1 pass criteria. Automated assertions continue to use stable IDs, sentinel files, source states, iframe origins, and UI markers. The model text is for manual readability and for exercising transcript rendering with a local, keyless model.
+
+Manual mode enables richer seed data by default. It should create a small spread of sessions, for example:
+
+```text
+Local
+  Local notes - Docker acceptance overview
+  Local debugging checklist
+
+remote-a
+  Remote A sentinel walkthrough
+  Remote A terminal check
+
+remote-b
+  Remote B isolation walkthrough
+  Remote B settings check
+```
+
+The seed step records whether each transcript used Ollama or static fixture text in the acceptance report. It must not call any external hosted model provider and must not require `DEEPSEEK_API_KEY`.
+
 ## Retained environment and manual validation
 
 Acceptance does not run `docker compose down` at the end. By default:
@@ -307,6 +341,8 @@ The implementation is complete when these facts are proven by scripts or documen
 - `acceptance:docker:manual` prepares a retained manual validation environment.
 - `acceptance:docker:down` stops the retained environment.
 - `acceptance:docker:clean` removes containers, volumes, and generated Docker acceptance state.
+- Manual mode creates local and remote seeded sessions with recognizable titles and transcript content.
+- Seeded transcript generation uses host Ollama `minicpm-v4.6:1b` when available and falls back to static fixture text for non-strict automated acceptance.
 
 ## Implementation order
 
@@ -315,5 +351,6 @@ The implementation is complete when these facts are proven by scripts or documen
 3. Add `--docker-remotes` to P0 and wire it to `remote-a`.
 4. Add `--docker-remotes` to P1 and wire it to `remote-a` and `remote-b`.
 5. Add `--keep-local-dsh` and `acceptance:docker:manual`.
-6. Update `docs/acceptance.md`, `README.md`, and `AGENTS.md`.
-7. Validate with `npm run check`, `npm run acceptance:docker:up`, `npm run acceptance:docker:p0`, and `npm run acceptance:docker:p1` on macOS with OrbStack.
+6. Add seeded local and remote session data, with optional host Ollama `minicpm-v4.6:1b` transcript generation.
+7. Update `docs/acceptance.md`, `README.md`, and `AGENTS.md`.
+8. Validate with `npm run check`, `npm run acceptance:docker:up`, `npm run acceptance:docker:p0`, and `npm run acceptance:docker:p1` on macOS with OrbStack.
