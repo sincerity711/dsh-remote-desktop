@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
 
     exports.inject = ['slots', 'sessions', 'workspaces']
 
-    // Official ui-workspace copy from deepseek-harness 9f8359451a6f8df17f65bc2c398810ac19bdfc8a.
+    // Official ui-workspace copy from deepseek-harness 141eb6fef83422698aef7a981029e843e8161534.
     const OfficialWorkspace = (() => {
       const module = { exports: {} }
       const exports = module.exports
@@ -463,7 +463,17 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         d: d.getDate()
                   })} ${pad2(d.getHours())}:${pad2(d.getMinutes())}` });
             }
-            /** Hover-card body: workspace title, full directory path, absolute creation time. */
+            /** Keep display-only home abbreviation compatible with older runtime bundles. */
+            function abbreviateHomePath(path, home) {
+                  const runtimeFn = _deepseek_ai_dsh_client_runtime_client.abbreviateHomePath;
+                  if (typeof runtimeFn === "function") return runtimeFn(path, home);
+                  if (home === void 0 || home === "" || path.startsWith("/") === false || home.startsWith("/") === false) return path;
+                  const root = home.replace(/\/+$/, "");
+                  if (root === "" || root === "/") return path;
+                  if (path.replace(/\/+$/, "") === root) return "~";
+                  return path.startsWith(`${root}/`) ? `~${path.slice(root.length)}` : path;
+            }
+            /** Hover-card body: workspace title, display directory path, absolute creation time. */
             function WorkspaceHoverContent({ label, cwd, createdAt, t }) {
                   return (0, react_jsx_runtime.jsxs)("div", {
                         className: Rows_module_css_default.hoverContent,
@@ -500,7 +510,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
             * @param props.t - the browser root's locale seat.
             * @returns the row element.
             */
-            function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }) {
+            function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home, t }) {
                   const row = group;
                   const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
                   const active = group.expanded && group.containsCurrent;
@@ -601,7 +611,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                         anchor: ownRow,
                         content: (0, react_jsx_runtime.jsx)(WorkspaceHoverContent, {
                               label: row.label,
-                              cwd: row.cwd,
+                              cwd: row.cwd === void 0 ? void 0 : abbreviateHomePath(row.cwd, home),
                               createdAt: row.createdAt,
                               t
                         }),
@@ -1261,7 +1271,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                   return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
             }
             /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
-            function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onUngroupedArchiveAll, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
+            function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onUngroupedArchiveAll, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t }) {
                   const list = useSessions((s) => s);
                   const current = list.current;
                   const [expandedSessionGroups, setExpandedSessionGroups] = (0, react.useState)([]);
@@ -1452,6 +1462,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                                                 children: [
                                                       (0, react_jsx_runtime.jsx)(ProjectRowItem, {
                                                             group,
+                                                            home,
                                                             t,
                                                             onToggle: () => {
                                                                   if (group.expanded) setExpandedSessionGroups((keys) => keys.filter((key) => key !== group.key));
@@ -1724,7 +1735,8 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
             * @param props - composed slot props (shell owner share + store + injected actions).
             * @returns the region element tree.
             */
-            function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, renderSlot, t, openWorkspaceAdd }) {
+            function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostDescription, renderSlot, t, openWorkspaceAdd }) {
+                  const home = useHostDescription((description) => description?.home);
                   const workspaces = useWorkspaces((state) => state.items);
                   const workspacePhase = useWorkspaces((state) => state.phase);
                   const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
@@ -2123,6 +2135,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
                                           insertWorkspaceBefore,
                                           insertSessionBefore,
                                           orderBy,
+                                          home,
                                           t,
                                           onRenameRequest: (workspaceId, currentTitle) => {
                                                 setRenameTarget({
@@ -3581,6 +3594,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
       }
       if (typeof ctx.provide === 'function') ctx.provide('remoteDesktop', createService(openLocal))
       else window.__dshRemoteDesktop = createService(openLocal)
+      const connection = ctx.get('connection')
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({
         name: 'sidebar.workspaces',
         priority: -10,
@@ -3610,7 +3624,7 @@ let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-ru
             return result.value
           },
           searchResultLimit: ctx.sessions.searchResultLimit,
-          hooks: { directoryFlow: browserFlowSource },
+          hooks: { directoryFlow: browserFlowSource, hostDescription: connection.hostDescription },
         }),
       }, OfficialWorkspaceForkBrowser))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({

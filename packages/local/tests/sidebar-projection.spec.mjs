@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const upstreamHash = '9f8359451a6f8df17f65bc2c398810ac19bdfc8a'
+const upstreamHash = '141eb6fef83422698aef7a981029e843e8161534'
 
 test('client sidebar records official workspace fork provenance', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')

@@ -13,7 +13,7 @@ the local/remote workspace splitter on top of the updated official files.
 
 ## Scope and approach
 
-1. Read the eight tracked `packages/client/ui-workspace` files from the pinned
+1. Read the nine tracked `packages/client/ui-workspace` files from the pinned
    upstream commit and replace the vendored `baseline/` copy.
 2. Update `UPSTREAM.md` with the upstream repository, commit, copied files,
    and the maintained remote desktop delta.

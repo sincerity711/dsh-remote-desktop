@@ -1,4 +1,4 @@
-Remote Desktop patch summary for official ui-workspace baseline 9f8359451a6f8df17f65bc2c398810ac19bdfc8a:
+Remote Desktop patch summary for official ui-workspace baseline 141eb6fef83422698aef7a981029e843e8161534:
 
 - Build the workspace tree from both local `ctx.workspaces/ctx.sessions` and connected remote snapshots.
 - Use source-qualified workspace/session keys so local and remote ids cannot collide.

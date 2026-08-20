@@ -2,8 +2,8 @@
 
 `dsh-remote-desktop` keeps its sidebar visually aligned with the official workspace browser by treating these files as a vendored fork.
 
-- Repository: `/Users/i060912/SAPDevelop/deepseek-harness`
-- Commit: `9f8359451a6f8df17f65bc2c398810ac19bdfc8a`
+- Repository: `https://github.com/deepseek-ai/deepseek-harness.git`
+- Commit: `141eb6fef83422698aef7a981029e843e8161534`
 - Package: `packages/client/ui-workspace`
 - Local baseline copy: `packages/local/upstream/ui-workspace/baseline/`
 - Local patch summary: `packages/local/upstream/ui-workspace/remote-desktop.patch`

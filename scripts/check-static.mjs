@@ -16,7 +16,7 @@ const requiredClientNeedles = [
   'openRemoteSession',
   'openLocalSession',
   'const OfficialWorkspace = (() =>',
-  '9f8359451a6f8df17f65bc2c398810ac19bdfc8a',
+  '141eb6fef83422698aef7a981029e843e8161534',
   'OfficialWorkspaceForkBrowser',
   'data-rd-host-marker',
   'var(--dsw-specific-sidebar-fill)',
@@ -46,7 +46,7 @@ for (const needle of requiredClientNeedles) {
 }
 
 
-const upstreamHash = '9f8359451a6f8df17f65bc2c398810ac19bdfc8a'
+const upstreamHash = '141eb6fef83422698aef7a981029e843e8161534'
 if (!upstreamRecord.includes(upstreamHash)) throw new Error('ui-workspace upstream record missing pinned hash')
 if (!upstreamPatch.includes('remote host marker')) throw new Error('ui-workspace remote patch summary missing marker delta')
 if (/ui-settings-general[\s\S]*disabled: true/.test(localPatch)) throw new Error('ui-settings-general should remain enabled; extend official settings slots instead')
