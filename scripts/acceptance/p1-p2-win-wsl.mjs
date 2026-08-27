@@ -13,13 +13,18 @@ const repoRoot = resolve(__dirname, '../..')
 const args = parseArgs(process.argv.slice(2))
 const containerRemotes = args['container-remotes'] === 'true' || args['docker-remotes'] === 'true'
 const sshDest = args['ssh-dest'] ?? (containerRemotes ? 'remote-a' : 'win-wsl')
-const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'deepseek-harness'))
+const dshBin = process.env.DSH_BIN ?? 'dsh'
+const harnessRoot = args['harness-root'] ?? process.env.DSH_HARNESS_ROOT
 const localHome = resolve(repoRoot, '.acceptance', 'p1-local-home')
 const containerSshConfig = join(repoRoot, '.acceptance', 'container', 'ssh-config')
 const localSshConfig = containerRemotes ? containerSshConfig : join(localHome, 'ssh-config')
 const artifactDir = join(repoRoot, '.acceptance', 'artifacts', `p1-${new Date().toISOString().replaceAll(/[:.]/g, '-')}`)
 const companionDir = resolve(repoRoot, 'packages/companion')
 const localPlugin = resolve(repoRoot, 'packages/local')
+const ollamaModel = process.env.DSH_RD_OLLAMA_MODEL ?? 'minicpm-v4.6:1b'
+const ollamaApiKeyEnv = 'DSH_RD_OLLAMA_API_KEY'
+const ollamaApiKey = process.env[ollamaApiKeyEnv] ?? 'ollama-acceptance-dummy-key'
+const localOllamaBaseUrl = (process.env.DSH_RD_OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434').replace(/\/+$/, '')
 const remotes = containerRemotes ? [
   { id: 'remote-a', label: 'remote-a', sshDest: 'remote-a', home: '~/.dsh-remote-desktop-p1', port: 30800, sentinel: '/tmp/dsh-rd-p1-a', text: 'REMOTE_SENTINEL_A' },
   { id: 'remote-b', label: 'remote-b', sshDest: 'remote-b', home: '~/.dsh-remote-desktop-p1', port: 30800, sentinel: '/tmp/dsh-rd-p1-b', text: 'REMOTE_SENTINEL_B' },
@@ -34,15 +39,45 @@ let localLog = ''
 let browserLogs = []
 let localSessionId = ''
 let remoteProxyExports = ''
+let remoteOllamaBaseUrl = process.env.DSH_RD_REMOTE_OLLAMA_BASE_URL ?? `${localOllamaBaseUrl}/v1`
 
 await mkdir(artifactDir, { recursive: true })
 process.on('exit', stopStarted)
 
+async function ensureOllama() {
+  let models
+  try {
+    const response = await fetch(`${localOllamaBaseUrl}/api/tags`, { signal: AbortSignal.timeout(5000) })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    models = await response.json()
+  } catch (error) {
+    throw new Error(`Ollama is required for acceptance. Start Ollama at ${localOllamaBaseUrl}.\n${error.message}`)
+  }
+  if (!models.models?.some(model => model.name === ollamaModel)) {
+    throw new Error(`Ollama model ${ollamaModel} is missing. Run: ollama pull ${ollamaModel}`)
+  }
+}
+
+function ollamaSettings(baseUrl) {
+  return `agent-default-model:\n  provider: ollama\n  model: ${JSON.stringify(ollamaModel)}\nllm-pi-ai:\n  providers:\n    ollama:\n      displayName: Local Ollama\n      api: openai-completions\n      apiKeyEnv: ${ollamaApiKeyEnv}\n      baseURL: ${baseUrl}\n      models:\n        - id: ${JSON.stringify(ollamaModel)}\n          name: MiniCPM V 4.6 1B\n`
+}
+
+async function assertOllamaDefault(models, owner) {
+  if (models.current?.provider !== 'ollama' || models.current?.model !== ollamaModel || models.routable !== true) {
+    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(models.current)}`)
+  }
+}
+
 try {
+  await ensureOllama()
   await item('P1-MULTI-001', 'two remotes connect', async () => {
     if (containerRemotes && !existsSync(localSshConfig)) throw new Error(`Apple container SSH config missing: ${localSshConfig}. Run npm run acceptance:container:up`)
     for (const remote of remotes) await sshTo(remote.sshDest, 'true', { timeoutMs: 10000 })
-    if (containerRemotes) remoteProxyExports = await startHostProxy()
+    if (containerRemotes) {
+      const hostProxy = await startHostProxy()
+      remoteProxyExports = hostProxy.packageProxyExports
+      remoteOllamaBaseUrl = hostProxy.ollamaBaseUrl
+    }
     await copyCompanion()
     for (const remote of remotes) await setupRemote(remote)
     await setupLocal()
@@ -56,6 +91,7 @@ try {
       const workspace = await remoteRpc(remote, 'workspace.create', { path: remote.sentinel })
       const session = await remoteRpc(remote, 'session.create', { workspaceId: workspace.workspace.workspaceId })
       remote.sessionId = session.sessionId
+      await assertOllamaDefault(await remoteRpc(remote, 'session.models', { sessionId: remote.sessionId }), remote.id)
       await remoteRpc(remote, 'session.prompt', { sessionId: remote.sessionId, mode: 'queue', content: [{ type: 'text', text: `Acceptance fixture for ${remote.id}.` }] })
       await remoteRpc(remote, 'session.cancel', { sessionId: remote.sessionId })
     }
@@ -292,7 +328,10 @@ async function startHostProxy() {
   })
   const { port } = JSON.parse(line)
   const proxy = `http://192.168.64.1:${port}`
-  return `export HTTP_PROXY=${proxy} HTTPS_PROXY=${proxy} npm_config_proxy=${proxy} npm_config_https_proxy=${proxy} NO_PROXY=127.0.0.1,localhost,192.168.64.0/24 no_proxy=127.0.0.1,localhost,192.168.64.0/24`
+  return {
+    packageProxyExports: `export HTTP_PROXY=${proxy} HTTPS_PROXY=${proxy} npm_config_proxy=${proxy} npm_config_https_proxy=${proxy} NO_PROXY=127.0.0.1,localhost,192.168.64.0/24 no_proxy=127.0.0.1,localhost,192.168.64.0/24`,
+    ollamaBaseUrl: `${proxy}/v1`,
+  }
 }
 
 async function setupRemote(remote) {
@@ -304,8 +343,10 @@ async function setupRemote(remote) {
     rm -rf ${remote.home} ${remote.sentinel}
     mkdir -p ${remote.sentinel}
     printf '${remote.text}\\n' > ${remote.sentinel}/remote-only.txt
-    if [ ! -x "$HOME/.npm-global/bin/dsh" ]; then npm install -g @deepseek-ai/dsh@0.1.0-rc.7; fi
+    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.1-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.1.1-rc.2 --force; fi
     DSH_HOME=${remote.home} dsh --profile web --dump-config >/tmp/dsh-rd-${remote.id}-dump.txt
+    cat > ${remote.home}/settings.yaml <<'SETTINGS'
+${ollamaSettings(remoteOllamaBaseUrl)}SETTINGS
     cd ${remote.home}/profiles/web
     node - <<'NODE'
 const fs = require('fs')
@@ -329,7 +370,7 @@ NODE
     CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true >/tmp/dsh-rd-${remote.id}-install.log 2>&1
     pnpm rebuild node-pty >/tmp/dsh-rd-${remote.id}-node-pty.log 2>&1 || true
     if [ -f /tmp/dsh-rd-${remote.id}.pid ]; then kill $(cat /tmp/dsh-rd-${remote.id}.pid) 2>/dev/null || true; fi
-    nohup env DSH_HOME=${remote.home} DSH_TELEMETRY_DISABLED=1 dsh --profile web --host 127.0.0.1 --port ${remote.port} --trusted-host 127.0.0.1:${remote.port} > /tmp/dsh-rd-${remote.id}.log 2>&1 & echo $! > /tmp/dsh-rd-${remote.id}.pid
+    nohup env DSH_HOME=${remote.home} DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remote.port} --trusted-host 127.0.0.1:${remote.port} > /tmp/dsh-rd-${remote.id}.log 2>&1 & echo $! > /tmp/dsh-rd-${remote.id}.pid
   `, { timeoutMs: 120000 })
   const deadline = Date.now() + 60000
   while (Date.now() < deadline) {
@@ -347,12 +388,16 @@ async function setupLocal() {
     const user = await remoteUser()
     await writeFile(localSshConfig, `Include ~/.ssh/config\n${remotes.map(remote => `Host ${remote.id}\n  HostName ${remote.sshDest}\n  User ${user}\n`).join('')}`)
   }
+  if (harnessRoot && !existsSync(harnessRoot)) throw new Error(`harness root not found: ${harnessRoot}`)
   await runHarness(['--profile', 'web', '--dump-config'], { DSH_HOME: localHome }, 60000)
+  await writeFile(join(localHome, 'settings.yaml'), ollamaSettings(`${localOllamaBaseUrl}/v1`))
   const profile = join(localHome, 'profiles/web')
   await patchProfilePackage(profile)
   await cmd('pnpm', ['install', '--no-frozen-lockfile'], { cwd: profile, env: { CI: 'true' }, timeoutMs: 120000 })
   const port = await freePort()
-  const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`], { cwd: harnessRoot, env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig, ...(containerRemotes ? { DSH_REMOTE_DESKTOP_SKIP_SETUP: '1' } : {}) }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(harnessRoot ? 'node' : dshBin, harnessRoot
+    ? ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`]
+    : ['--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`], { cwd: harnessRoot || repoRoot, env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig, [ollamaApiKeyEnv]: ollamaApiKey, ...(containerRemotes ? { DSH_REMOTE_DESKTOP_SKIP_SETUP: '1' } : {}) }, stdio: ['ignore', 'pipe', 'pipe'] })
   started.push(child)
   child.stdout.on('data', b => { localLog += String(b) })
   child.stderr.on('data', b => { localLog += String(b) })
@@ -361,6 +406,9 @@ async function setupLocal() {
   const workspace = await localRpc('workspace.create', { path: repoRoot })
   const session = await localRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
   localSessionId = session.sessionId
+  await assertOllamaDefault(await localRpc('session.models', { sessionId: localSessionId }), 'local')
+  await localRpc('session.prompt', { sessionId: localSessionId, mode: 'queue', content: [{ type: 'text', text: 'Local Remote Desktop acceptance fixture.' }] })
+  await localRpc('session.cancel', { sessionId: localSessionId })
 }
 
 async function patchProfilePackage(profile) {
@@ -394,7 +442,11 @@ async function localRpc(method, payload) { const rpcId=randomUUID(); const res=a
 async function sidebarApi(remote, method, payload) { const res=await fetch(`${remote.proxyOrigin}/sidebar/api/${method}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const json=await res.json(); if(!json.ok) throw new Error(json.error?.message||'sidebar failed'); return json.value }
 async function terminalCommand(remote, input) { const url=`${remote.proxyOrigin.replace('http://','ws://')}/sidebar/ws/terminal?sessionId=${encodeURIComponent(remote.sessionId)}&tab=p1-${Date.now()}&cwd=${encodeURIComponent(remote.sentinel)}`; return await new Promise((resolve,reject)=>{const ws=new WebSocket(url);let data='';const timer=setTimeout(()=>{ws.close();reject(new Error('terminal timeout '+data))},8000);ws.onopen=()=>ws.send(input);ws.onmessage=e=>{data+=String(e.data); if(data.includes(remote.text)){clearTimeout(timer);ws.close();resolve(data)}};ws.onerror=()=>{clearTimeout(timer);reject(new Error('terminal websocket error '+data))}}) }
 async function api(path, init) { const res=await fetch(`${localBase}/remote-desktop/api${path}`,{headers:{'content-type':'application/json'},...init}); const json=await res.json(); if(!res.ok||json.ok!==true) throw new Error(json.error?.message||`HTTP ${res.status}`); return json }
-async function runHarness(args, env, timeoutMs) { return cmd('pnpm', ['dsh', ...args], { cwd: harnessRoot, env, timeoutMs }) }
+async function runHarness(args, env, timeoutMs) {
+  return harnessRoot
+    ? cmd('pnpm', ['dsh', ...args], { cwd: harnessRoot, env, timeoutMs })
+    : cmd(dshBin, args, { cwd: repoRoot, env, timeoutMs })
+}
 async function ssh(command, options={}) { return sshTo(sshDest, command, options) }
 async function sshRemote(remote, command, options={}) { return sshTo(remote.sshDest, command, options) }
 async function sshTo(alias, command, options={}) { return cmd('ssh', sshArgs(alias, command), { timeoutMs: options.timeoutMs ?? 30000 }) }

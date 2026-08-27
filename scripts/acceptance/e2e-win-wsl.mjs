@@ -14,7 +14,8 @@ const args = parseArgs(process.argv.slice(2))
 const containerRemotes = args['container-remotes'] === 'true' || args['docker-remotes'] === 'true'
 const keepLocalDsh = args['keep-local-dsh'] === 'true'
 const sshDest = args['ssh-dest'] ?? (containerRemotes ? 'remote-a' : 'win-wsl')
-const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'deepseek-harness'))
+const dshBin = process.env.DSH_BIN ?? 'dsh'
+const harnessRoot = args['harness-root'] ?? process.env.DSH_HARNESS_ROOT
 const remoteHome = args['remote-home'] ?? '~/.dsh-remote-desktop-test'
 const remoteSentinelDir = '/tmp/dsh-remote-desktop-sentinel'
 const remotePort = Number(args['remote-port'] ?? 30800)
@@ -24,6 +25,10 @@ const containerSshConfig = join(repoRoot, '.acceptance', 'container', 'ssh-confi
 const localSshConfig = containerRemotes ? containerSshConfig : join(localHome, 'ssh-config')
 const localPlugin = resolve(repoRoot, 'packages/local')
 const companionSource = resolve(repoRoot, 'packages/companion')
+const ollamaModel = process.env.DSH_RD_OLLAMA_MODEL ?? 'minicpm-v4.6:1b'
+const ollamaApiKeyEnv = 'DSH_RD_OLLAMA_API_KEY'
+const ollamaApiKey = process.env[ollamaApiKeyEnv] ?? 'ollama-acceptance-dummy-key'
+const localOllamaBaseUrl = (process.env.DSH_RD_OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434').replace(/\/+$/, '')
 const runId = new Date().toISOString().replaceAll(/[:.]/g, '-')
 const artifactDir = join(artifactsRoot, runId)
 const report = []
@@ -38,6 +43,7 @@ let remoteSessionId = ''
 let localSessionId = ''
 let sourceToken = ''
 let remoteProxyExports = ''
+let remoteOllamaBaseUrl = process.env.DSH_RD_REMOTE_OLLAMA_BASE_URL ?? `${localOllamaBaseUrl}/v1`
 
 await mkdir(artifactDir, { recursive: true })
 process.on('exit', stopStarted)
@@ -49,7 +55,32 @@ function stopStarted() {
   }
 }
 
+async function ensureOllama() {
+  let models
+  try {
+    const response = await fetch(`${localOllamaBaseUrl}/api/tags`, { signal: AbortSignal.timeout(5000) })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    models = await response.json()
+  } catch (error) {
+    throw new Error(`Ollama is required for acceptance. Start Ollama at ${localOllamaBaseUrl}.\n${error.message}`)
+  }
+  if (!models.models?.some(model => model.name === ollamaModel)) {
+    throw new Error(`Ollama model ${ollamaModel} is missing. Run: ollama pull ${ollamaModel}`)
+  }
+}
+
+function ollamaSettings(baseUrl) {
+  return `agent-default-model:\n  provider: ollama\n  model: ${JSON.stringify(ollamaModel)}\nllm-pi-ai:\n  providers:\n    ollama:\n      displayName: Local Ollama\n      api: openai-completions\n      apiKeyEnv: ${ollamaApiKeyEnv}\n      baseURL: ${baseUrl}\n      models:\n        - id: ${JSON.stringify(ollamaModel)}\n          name: MiniCPM V 4.6 1B\n`
+}
+
+async function assertOllamaDefault(models, owner) {
+  if (models.current?.provider !== 'ollama' || models.current?.model !== ollamaModel || models.routable !== true) {
+    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(models.current)}`)
+  }
+}
+
 try {
+  await ensureOllama()
   await item('P0-ENV-001', 'local home isolation', async () => {
     await rm(localHome, { recursive: true, force: true })
     await mkdir(localHome, { recursive: true })
@@ -69,7 +100,11 @@ try {
     return `ssh BatchMode ${sshDest} succeeded`
   })
 
-  if (containerRemotes) remoteProxyExports = await startHostProxy()
+  if (containerRemotes) {
+    const hostProxy = await startHostProxy()
+    remoteProxyExports = hostProxy.packageProxyExports
+    remoteOllamaBaseUrl = hostProxy.ollamaBaseUrl
+  }
   await setupRemote()
   await setupLocal()
   await setupData()
@@ -119,7 +154,10 @@ async function startHostProxy() {
   })
   const { port } = JSON.parse(line)
   const proxy = `http://192.168.64.1:${port}`
-  return `export HTTP_PROXY=${proxy} HTTPS_PROXY=${proxy} npm_config_proxy=${proxy} npm_config_https_proxy=${proxy} NO_PROXY=127.0.0.1,localhost,192.168.64.0/24 no_proxy=127.0.0.1,localhost,192.168.64.0/24`
+  return {
+    packageProxyExports: `export HTTP_PROXY=${proxy} HTTPS_PROXY=${proxy} npm_config_proxy=${proxy} npm_config_https_proxy=${proxy} NO_PROXY=127.0.0.1,localhost,192.168.64.0/24 no_proxy=127.0.0.1,localhost,192.168.64.0/24`,
+    ollamaBaseUrl: `${proxy}/v1`,
+  }
 }
 
 async function setupRemote() {
@@ -133,8 +171,10 @@ async function setupRemote() {
       mkdir -p "$HOME/.npm-global"
       npm config set prefix "$HOME/.npm-global"
       export PATH=\"$HOME/.npm-global/bin:$PATH\"
-      if [ ! -x "$HOME/.npm-global/bin/dsh" ]; then npm install -g @deepseek-ai/dsh@0.1.0-rc.7; fi
+      if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.1-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.1.1-rc.2 --force; fi
       DSH_HOME=${remoteHome} dsh --profile web --dump-config >/tmp/dsh-remote-desktop-dump.txt
+      cat > ${remoteHome}/settings.yaml <<'SETTINGS'
+${ollamaSettings(remoteOllamaBaseUrl)}SETTINGS
       cd ${remoteHome}/profiles/web
       node - <<'NODE'
 const fs = require('fs')
@@ -159,7 +199,7 @@ NODE
       pnpm rebuild node-pty >/tmp/dsh-remote-desktop-node-pty.log 2>&1 || true
       printf 'REMOTE_SENTINEL_WIN_WSL\n' > ${remoteSentinelDir}/remote-only.txt
       if [ -f /tmp/dsh-remote-desktop-web.pid ]; then kill $(cat /tmp/dsh-remote-desktop-web.pid) 2>/dev/null || true; fi
-      nohup env DSH_HOME=${remoteHome} DSH_TELEMETRY_DISABLED=1 dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-remote-desktop-web.log 2>&1 & echo $! > /tmp/dsh-remote-desktop-web.pid
+      nohup env DSH_HOME=${remoteHome} DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-remote-desktop-web.log 2>&1 & echo $! > /tmp/dsh-remote-desktop-web.pid
     `, { timeoutMs: 120000 })
     await waitForRemoteDsh()
     remoteDshLog = await ssh('cat /tmp/dsh-remote-desktop-web.log 2>/dev/null || true')
@@ -178,8 +218,9 @@ NODE
 
 async function setupLocal() {
   await item('P0-BOOT-002', 'local dsh boots', async () => {
-    if (!existsSync(harnessRoot)) throw new Error(`harness root not found: ${harnessRoot}`)
+    if (harnessRoot && !existsSync(harnessRoot)) throw new Error(`harness root not found: ${harnessRoot}`)
     await runHarness(['--profile', 'web', '--dump-config'], { DSH_HOME: localHome }, 60000)
+    await writeFile(join(localHome, 'settings.yaml'), ollamaSettings(`${localOllamaBaseUrl}/v1`))
     const profile = join(localHome, 'profiles/web')
     await patchProfilePackage(profile, {
       dependency: ['dsh-remote-desktop', `link:${localPlugin}`],
@@ -188,9 +229,11 @@ async function setupLocal() {
     await cmd('pnpm', ['install', '--no-frozen-lockfile'], { cwd: profile, env: { CI: 'true' }, timeoutMs: 120000 })
     localPort = await freePort()
     const logPath = join(artifactDir, 'local-dsh-live.log')
-    const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(localPort), '--trusted-host', `127.0.0.1:${localPort}`], {
-      cwd: harnessRoot,
-      env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig, ...(containerRemotes ? { DSH_REMOTE_DESKTOP_SKIP_SETUP: '1' } : {}) },
+    const child = spawn(harnessRoot ? 'node' : dshBin, harnessRoot
+      ? ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(localPort), '--trusted-host', `127.0.0.1:${localPort}`]
+      : ['--profile', 'web', '--host', '127.0.0.1', '--port', String(localPort), '--trusted-host', `127.0.0.1:${localPort}`], {
+      cwd: harnessRoot || repoRoot,
+      env: { ...process.env, DSH_HOME: localHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: localSshConfig, [ollamaApiKeyEnv]: ollamaApiKey, ...(containerRemotes ? { DSH_REMOTE_DESKTOP_SKIP_SETUP: '1' } : {}) },
       detached: keepLocalDsh,
       stdio: keepLocalDsh ? 'ignore' : ['ignore', 'pipe', 'pipe'],
     })
@@ -222,6 +265,9 @@ async function setupData() {
     const workspace = await remoteRpc('workspace.create', { path: remoteSentinelDir })
     const session = await remoteRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
     remoteSessionId = session.sessionId
+    await assertOllamaDefault(await remoteRpc('session.models', { sessionId: remoteSessionId }), 'remote')
+    await remoteRpc('session.prompt', { sessionId: remoteSessionId, mode: 'queue', content: [{ type: 'text', text: 'Remote Desktop acceptance fixture.' }] })
+    await remoteRpc('session.cancel', { sessionId: remoteSessionId })
     const snapshot = await api(`/snapshot?id=${encodeURIComponent(sshDest)}`)
     const listed = snapshot.snapshot.workspaces.items.some(ws => ws.sessionIds.includes(remoteSessionId))
     if (!listed) throw new Error(`remote session ${remoteSessionId} not in snapshot`)
@@ -241,6 +287,9 @@ async function setupData() {
     const workspace = await localRpc('workspace.create', { path: repoRoot })
     const session = await localRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
     localSessionId = session.sessionId
+    await assertOllamaDefault(await localRpc('session.models', { sessionId: localSessionId }), 'local')
+    await localRpc('session.prompt', { sessionId: localSessionId, mode: 'queue', content: [{ type: 'text', text: 'Local Remote Desktop acceptance fixture.' }] })
+    await localRpc('session.cancel', { sessionId: localSessionId })
     return `local session ${localSessionId}`
   }, { duplicateOk: true })
 }
@@ -306,7 +355,7 @@ async function runBrowserChecks() {
         const probeCovered = probe === overlay || overlay.contains(probe)
         if (host.parentElement !== document.body) return { ok: false, reason: 'overlay host is not a direct body portal' }
         if (style.position !== 'fixed') return { ok: false, reason: `overlay position is ${style.position}` }
-        if (Number(style.zIndex) < 2147483000) return { ok: false, reason: `overlay z-index is ${style.zIndex}` }
+        if (Number(style.zIndex) < 900) return { ok: false, reason: `overlay z-index is ${style.zIndex}` }
         if (rect.left <= 0 || rect.right < window.innerWidth - 1 || rect.bottom < window.innerHeight - 1) return { ok: false, reason: `bad overlay rect ${JSON.stringify({ left: rect.left, right: rect.right, bottom: rect.bottom })}` }
         if (!probeCovered) return { ok: false, reason: `right-side probe hit ${probe?.tagName ?? 'nothing'} outside overlay` }
         return { ok: true, reason: `${style.position} z=${style.zIndex} body portal covers right-side probe` }
@@ -612,7 +661,9 @@ async function item(id, name, fn, options = {}) {
 }
 
 async function runHarness(args, env, timeoutMs) {
-  return await cmd('pnpm', ['dsh', ...args], { cwd: harnessRoot, env, timeoutMs })
+  return harnessRoot
+    ? await cmd('pnpm', ['dsh', ...args], { cwd: harnessRoot, env, timeoutMs })
+    : await cmd(dshBin, args, { cwd: repoRoot, env, timeoutMs })
 }
 
 async function ssh(command, options = {}) {

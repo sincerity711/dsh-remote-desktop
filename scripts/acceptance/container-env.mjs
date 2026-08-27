@@ -150,7 +150,7 @@ TEXT
     cat > /tmp/dsh-rd-canary/README.md <<'TEXT'
 ${body}
 TEXT
-    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.0-rc.7" ]; then npm install -g @deepseek-ai/dsh@0.1.0-rc.7 --force; fi
+    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.1-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.1.1-rc.2 --force; fi
     if [ ! -f ~/.dsh-remote-desktop-canary/profiles/web/package.json ]; then
       DSH_HOME=~/.dsh-remote-desktop-canary dsh --profile web --dump-config >/tmp/dsh-rd-canary-dump.txt
     fi

@@ -47,6 +47,13 @@ npm run acceptance:container:down
 npm run acceptance:container:clean
 ```
 
+All automated container acceptance paths and the manual canary use host Ollama as
+their default model. They require Ollama at `http://127.0.0.1:11434` with
+`minicpm-v4.6:1b` installed. Override these defaults with
+`DSH_RD_OLLAMA_BASE_URL` and `DSH_RD_OLLAMA_MODEL`. The local and remote DSH
+processes receive an isolated dummy `DSH_RD_OLLAMA_API_KEY`; it is not a hosted
+credential. Container remotes reach Ollama through the temporary host proxy.
+
 For manual validation without browser assertions, start the canary system:
 
 ```sh
