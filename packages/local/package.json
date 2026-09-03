@@ -64,8 +64,5 @@
   "homepage": "https://github.com/sincerity711/dsh-remote-desktop#readme",
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "dsh-remote-desktop-companion": "^0.1.0"
   }
 }
