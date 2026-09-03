@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const upstreamHash = '141eb6fef83422698aef7a981029e843e8161534'
+const upstreamHash = '4e84901e6471b79ec0338099867ebb4606d12bb5'
 
 test('client sidebar records official workspace fork provenance', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
@@ -37,28 +37,45 @@ test('client sidebar is project-first with a compact remote host marker', async 
   assert.doesNotMatch(client, /data-rd-sidebar['"]?: ['"]official-style-fork/)
 })
 
+test('remote and local workspace rows share the same expansion state', async () => {
+  const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+
+  assert.match(client, /const expanded = expandedGroups\.has\(g\.key\);/)
+  assert.doesNotMatch(client, /expandedGroups\.has\(g\.key\) \|\| g\.remoteMarker/)
+})
+
 test('remote summaries preserve blank state for the official New Session label', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
 
   assert.match(client, /blank: Boolean\(row\.blank \?\? row\.projections\?\.values\?\.sessionListMetadata\?\.blank\)/)
-  assert.match(client, /function sessionTitle\(session\)[\s\S]*session\.blank \? "New Session" : session\.displayTitle/)
+  assert.match(client, /function sessionTitle\(session\)[\s\S]*session\.blank \? "" : session\.displayTitle/)
   assert.doesNotMatch(client, /blank: false,\n\s*running: Boolean\(row\.running\)/)
 })
 
 
-test('remote workspace and session actions forward through host API', async () => {
+test('remote workspace and session actions use the iframe official Controller bridge', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
 
-  assert.match(client, /async function startRemoteWorkspace\(sourceId, workspaceId\)[\s\S]*remoteRpc\(sourceId, 'session\.create', \{ workspaceId \}\)/)
-  assert.match(client, /remoteRpc\(sourceId, 'workspace\.rename', \{ workspaceId, title \}\)/)
-  assert.match(client, /remoteRpc\(sourceId, 'workspace\.delete', \{ workspaceId \}\)/)
-  assert.match(client, /remoteRpc\(sourceId, 'workspace\.insertBefore'/)
-  assert.match(client, /remoteRpc\(sourceId, 'session\.rename', \{ sessionId, title \}\)/)
-  assert.match(client, /remoteRpc\(sourceId, 'session\.fork', \{ sessionId \}\)/)
-  assert.match(client, /remoteRpc\(sourceId, 'workspace\.archiveSession', \{ sessionId \}\)/)
-  assert.match(client, /remoteRpc\(sourceId, 'workspace\.insertSessionBefore'/)
+  assert.match(client, /async function startRemoteWorkspace\(sourceId, workspaceId\)[\s\S]*remoteRpc\(sourceId, 'session\/create', \{ workspaceId \}\)/)
+  assert.match(client, /remoteRpc\(sourceId, 'workspace\/rename', \{ workspaceId, title \}\)/)
+  assert.match(client, /remoteRpc\(sourceId, 'workspace\/delete', \{ workspaceId \}\)/)
+  assert.match(client, /remoteRpc\(sourceId, 'workspace\/insertBefore'/)
+  assert.match(client, /remoteRpc\(sourceId, 'session\/rename', \{ sessionId, title \}\)/)
+  assert.match(client, /remoteRpc\(sourceId, 'session\/fork', \{ sessionId \}\)/)
+  assert.match(client, /remoteRpc\(sourceId, 'workspace\/archiveSession', \{ sessionId \}\)/)
+  assert.match(client, /remoteRpc\(sourceId, 'workspace\/insertSessionBefore'/)
   assert.match(client, /const remoteId = decodeWorkspace\(workspaceId\)[\s\S]*deleteRemoteWorkspace\(remoteId\.sourceId, remoteId\.id\)[\s\S]*props\.deleteLocalWorkspace\?\.\(workspaceId\)/)
   assert.match(client, /const remoteId = decodeSession\(sessionId\)[\s\S]*archiveRemoteSession\(remoteId\.sourceId, remoteId\.id\)[\s\S]*props\.archiveSession\?\.\(sessionId\)/)
+})
+
+test('starting a local Session while a remote surface is active switches back to local', async () => {
+  const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+
+  assert.match(client, /const startLocalWorkspace = async \(workspaceId\) =>/)
+  assert.match(client, /const sessionId = await uiWorkspace\.connectWorkspace\(workspaceId\)/)
+  assert.match(client, /sessions\.open\(sessionId\)/)
+  assert.match(client, /store\.openLocal\(sessionId\)/)
+  assert.match(client, /startLocalWorkspace,/)
 })
 
 test('remote overlay resends pending opens when the iframe reports ready', async () => {
@@ -66,8 +83,8 @@ test('remote overlay resends pending opens when the iframe reports ready', async
 
   assert.match(client, /const \{ sources, active, pendingOpen, companionReady \} = remote/)
   assert.match(client, /pendingOpen\?\.nonce, source === undefined \? undefined : companionReady\[source\.id\]/)
-  assert.match(client, /const REMOTE_OVERLAY_Z_INDEX = 900/)
-  assert.doesNotMatch(client, /const REMOTE_OVERLAY_Z_INDEX = 2147483000/)
+  assert.match(client, /overlay: \{ position: 'absolute'/)
+  assert.doesNotMatch(client, /ReactDOM\.createPortal/)
 })
 
 
@@ -76,7 +93,7 @@ test('remote search forwards to connected hosts with source-qualified results', 
 
   assert.match(client, /const searchCombinedSessions = async \(query, signal\) =>/)
   assert.match(client, /remote\.sources\.filter\(source => source\.state === 'connected'\)/)
-  assert.match(client, /remoteRpc\(source\.id, 'session\.search', \{ query \}, signal\)/)
+  assert.match(client, /remoteRpc\(source\.id, 'session\/search', \{ query \}, signal\)/)
   assert.match(client, /sessionId: remoteKey\(source\.id, rowSessionId\(item\) \|\| item\.sessionId\)/)
   assert.match(client, /searchSessions: searchCombinedSessions/)
 })
@@ -100,7 +117,8 @@ test('archive-all Ungrouped uses existing source-aware session archive route', a
 
   assert.match(client, /onUngroupedArchiveAll: \(groupKey, sessionIds\) => \{[\s\S]*for \(const sessionId of sessionIds\) await archiveSession\(sessionId\)/)
   assert.match(client, /archiveSession: async sessionId => \{[\s\S]*const remoteId = decodeSession\(sessionId\)[\s\S]*archiveRemoteSession\(remoteId\.sourceId, remoteId\.id\)[\s\S]*props\.archiveSession\?\.\(sessionId\)/)
-  assert.match(client, /async function archiveRemoteSession\(sourceId, sessionId\)[\s\S]*remoteRpc\(sourceId, 'workspace\.archiveSession', \{ sessionId \}\)[\s\S]*refreshRemoteAfterMutation\(sourceId\)/)
+  assert.match(client, /async function archiveRemoteSession\(sourceId, sessionId\)[\s\S]*remoteRpc\(sourceId, 'workspace\/archiveSession', \{ sessionId \}\)/)
+  assert.doesNotMatch(client, /refreshRemoteAfterMutation/)
 })
 
 test('workspace rename duplicate checks are source-local', async () => {

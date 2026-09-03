@@ -1,9 +1,11 @@
-Remote Desktop patch summary for official ui-workspace baseline 141eb6fef83422698aef7a981029e843e8161534:
+Remote Desktop patch summary for official ui-workspace baseline 4e84901e6471b79ec0338099867ebb4606d12bb5:
 
 - Build the workspace tree from both local `ctx.workspaces/ctx.sessions` and connected remote snapshots.
+- Re-provide the disabled official package's `uiWorkspace` navigation service and root Workspace observable so the current `ui-sidebar` and renderer composition can activate.
 - Use source-qualified workspace/session keys so local and remote ids cannot collide.
 - Route local session row opens to `ctx.sessions.open` and remote session row opens to `store.openRemote`.
 - Keep workspace row clicks as expand/collapse only.
+- Apply the same persisted expand/collapse state to local and remote workspace rows; remote markers do not force a row open.
 - Render one compact remote host marker plus colored dot on remote project rows; host ids map deterministically to colors.
 - Forward supported remote workspace/session mutations through the connected host API and refresh that host snapshot: new session, rename/delete/reorder workspace, rename/fork/archive/reorder session.
 - Reject cross-source reorders instead of sending source-qualified ids to a local or unrelated remote registry.

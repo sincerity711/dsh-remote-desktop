@@ -2,12 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-test('remote host API remains constrained for remote operations', async () => {
+test('remote Session and Workspace business APIs are not reimplemented by the local host', async () => {
   const server = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
 
-  assert.match(server, /suffix === '\/host-api'/)
-  assert.match(server, /host API path must start with \/api\//)
-  assert.match(server, /source is not connected/)
+  assert.doesNotMatch(server, /suffix === '\/host-api'/)
+  assert.doesNotMatch(server, /REMOTE_COMPANION_RPC_PATH/)
+  assert.doesNotMatch(server, /REMOTE_COMPANION_SNAPSHOT_PATH/)
+  assert.doesNotMatch(server, /x-dsh-remote-desktop-token/)
 })
 
 test('remote desktop settings section opens remote native DSH pages', async () => {
@@ -30,14 +31,14 @@ test('remote desktop settings section opens remote native DSH pages', async () =
 })
 
 
-test('remote browse API is read-only and separate from host RPC proxy', async () => {
+test('remote browse API is read-only and no host RPC proxy remains', async () => {
   const server = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
 
   assert.match(server, /req\.method === 'GET' && suffix === '\/browse'/)
   assert.match(server, /browseRemoteDirectory\(source, \{ path, hidden \}, runtimes\.get\(id\)\)/)
   assert.match(server, /buildRemoteBrowseSshArgs\(source\)/)
   assert.match(server, /proc\.stdin\.end\(JSON\.stringify\(\{ path: input\.path, hidden: Boolean\(input\.hidden\) \}\)\)/)
-  assert.doesNotMatch(server, /host-api[\s\S]{0,240}browseRemoteDirectory/)
+  assert.doesNotMatch(server, /host-api/)
 })
 
 
@@ -46,6 +47,10 @@ test('remote connection verification accepts companion boot entry', async () => 
 
   assert.match(server, /function probeRemoteCompanion/)
   assert.match(server, /html\.includes\(REMOTE_COMPANION_PACKAGE\)/)
-  assert.match(server, /await rpc\(port, 'host\.describe', \{\}\)/)
-  assert.match(server, /await verifyRemoteReady\(tunnelPort\)/)
+  assert.doesNotMatch(server, /REMOTE_COMPANION_SNAPSHOT_PATH/)
+  assert.doesNotMatch(server, /REMOTE_COMPANION_RPC_PATH/)
+  assert.doesNotMatch(server, /host\.describe/)
+  assert.match(server, /await verifyRemoteReady\(tunnelPort, runtime\.abort\.signal\)/)
+  assert.match(server, /requestRejection\(req\)/)
+  assert.doesNotMatch(server, /DSH_REMOTE_DESKTOP_COMPANION_TOKEN/)
 })

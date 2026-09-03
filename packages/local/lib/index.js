@@ -11,7 +11,7 @@ export const REMOTE_COMPANION_PACKAGE = 'dsh-remote-desktop-companion'
 export const REMOTE_COMPANION_HEALTH_PATH = '/remote-desktop-companion/api/health'
 
 export const name = 'dsh-remote-desktop'
-export const inject = ['webServer']
+export const inject = ['webServer', 'connection']
 
 const API_PREFIX = '/remote-desktop/api'
 const DEFAULT_REMOTE_HOST = '127.0.0.1'
@@ -99,7 +99,12 @@ function publicSource(source, runtime) {
 
 async function readJson(req) {
   const chunks = []
-  for await (const chunk of req) chunks.push(Buffer.from(chunk))
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > 1024 * 1024) throw new Error('request body too large')
+    chunks.push(Buffer.from(chunk))
+  }
   if (chunks.length === 0) return {}
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
@@ -117,25 +122,31 @@ function writeError(res, status, code, message) {
   writeJson(res, status, { ok: false, error: { code, message } })
 }
 
-function normalizeSource(input) {
+export function normalizeSource(input) {
   const sshAlias = input.sshAlias !== undefined ? String(input.sshAlias).trim() : undefined
   const id = String(input.id ?? sshAlias ?? slug(String(input.label ?? input.sshHost ?? randomUUID()))).trim()
   const label = String(input.label ?? id).trim()
   const sshHost = input.sshHost !== undefined ? String(input.sshHost).trim() : ''
   const sshUser = input.sshUser !== undefined ? String(input.sshUser).trim() : ''
   if (id === '' || label === '') throw new Error('id and label are required')
+  if (id.length > 200 || label.length > 200) throw new Error('id and label must not exceed 200 characters')
   if ((sshAlias === undefined || sshAlias === '') && (sshHost === '' || sshUser === '')) {
     throw new Error('sshAlias or sshHost and sshUser are required')
   }
+  const sshPort = Number(input.sshPort ?? DEFAULT_SSH_PORT)
+  const remoteDshPort = Number(input.remoteDshPort ?? DEFAULT_REMOTE_DSH_PORT)
+  if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) throw new Error('sshPort must be an integer from 1 to 65535')
+  if (!Number.isInteger(remoteDshPort) || remoteDshPort < 1 || remoteDshPort > 65535) throw new Error('remoteDshPort must be an integer from 1 to 65535')
   return {
     id,
     label,
     ...(sshAlias !== undefined && sshAlias !== '' ? { sshAlias } : {}),
     ...(sshHost !== '' ? { sshHost } : {}),
     ...(sshUser !== '' ? { sshUser } : {}),
-    sshPort: Number(input.sshPort ?? DEFAULT_SSH_PORT),
+    sshPort,
     remoteDshHost: String(input.remoteDshHost ?? DEFAULT_REMOTE_HOST).trim() || DEFAULT_REMOTE_HOST,
-    remoteDshPort: Number(input.remoteDshPort ?? DEFAULT_REMOTE_DSH_PORT),
+    remoteDshPort,
+    autoConnect: input.autoConnect !== false,
   }
 }
 
@@ -269,34 +280,48 @@ export function buildRemoteBrowseSshArgs(source) {
 
 function remoteSetupScript(source, options = {}) {
   return `set -e
-DSH_REMOTE_DESKTOP_HOST=${shellQuote(source.remoteDshHost)}
-DSH_REMOTE_DESKTOP_PORT=${shellQuote(String(source.remoteDshPort))}
-DSH_REMOTE_DESKTOP_COMPANION=${shellQuote(REMOTE_COMPANION_PACKAGE)}
-DSH_REMOTE_DESKTOP_HEALTH=${shellQuote(REMOTE_COMPANION_HEALTH_PATH)}
-DSH_REMOTE_DESKTOP_INSTALL=${options.install === true ? '1' : '0'}
+export DSH_REMOTE_DESKTOP_HOST=${shellQuote(source.remoteDshHost)}
+export DSH_REMOTE_DESKTOP_PORT=${shellQuote(String(source.remoteDshPort))}
+export DSH_REMOTE_DESKTOP_COMPANION=${shellQuote(REMOTE_COMPANION_PACKAGE)}
+export DSH_REMOTE_DESKTOP_HEALTH=${shellQuote(REMOTE_COMPANION_HEALTH_PATH)}
+export DSH_REMOTE_DESKTOP_INSTALL=${options.install === true ? '1' : '0'}
+export DSH_REMOTE_DESKTOP_LOG="/tmp/dsh-remote-desktop-$DSH_REMOTE_DESKTOP_PORT.log"
 remote_desktop_has_dsh() {
-  node -e "const url='http://' + process.env.DSH_REMOTE_DESKTOP_HOST + ':' + process.env.DSH_REMOTE_DESKTOP_PORT + '/api/host.describe'; const rpcId=crypto.randomUUID(); fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'client-request',rpcId,method:'host.describe',payload:{}})}).then(r=>r.ok?0:1,()=>1).then(code=>process.exit(code))"
+  node -e "const url='http://' + process.env.DSH_REMOTE_DESKTOP_HOST + ':' + process.env.DSH_REMOTE_DESKTOP_PORT + '/'; fetch(url).then(()=>process.exit(0),()=>process.exit(1))"
 }
 remote_desktop_has_companion() {
   node -e "fetch('http://' + process.env.DSH_REMOTE_DESKTOP_HOST + ':' + process.env.DSH_REMOTE_DESKTOP_PORT + process.env.DSH_REMOTE_DESKTOP_HEALTH).then(r=>r.ok?0:1,()=>1).then(code=>process.exit(code))"
+}
+remote_desktop_print_auth_url() {
+  if [ -f "$DSH_REMOTE_DESKTOP_LOG" ]; then
+    grep -Eo 'http://[^[:space:]]+[?]token=[^[:space:]]+' "$DSH_REMOTE_DESKTOP_LOG" | tail -n 1 || true
+  fi
 }
 remote_desktop_companion_configured() {
   node -e "const fs=require('node:fs'); const os=require('node:os'); const path=require('node:path'); const root=process.env.DSH_HOME || path.join(os.homedir(), '.dsh'); const pkg=JSON.parse(fs.readFileSync(path.join(root, 'profiles/web/package.json'), 'utf8')); const name=process.env.DSH_REMOTE_DESKTOP_COMPANION; const bundles=pkg?.dsh?.profile?.bundles || []; const deps=pkg?.dependencies || {}; process.exit(bundles.includes(name) || Object.prototype.hasOwnProperty.call(deps, name) ? 0 : 1)"
 }
 remote_desktop_stop_listener() {
-  if command -v lsof >/dev/null 2>&1; then
-    pids=$(lsof -tiTCP:"$DSH_REMOTE_DESKTOP_PORT" -sTCP:LISTEN 2>/dev/null || true)
-    if [ -n "$pids" ]; then kill $pids 2>/dev/null || true; sleep 1; fi
+  pidfile="/tmp/dsh-remote-desktop-$DSH_REMOTE_DESKTOP_PORT.pid"
+  if [ ! -f "$pidfile" ]; then
+    echo "remote DSH port is occupied by a process not owned by remote desktop; stop it explicitly" >&2
+    exit 79
   fi
+  pid=$(cat "$pidfile")
+  case "$pid" in (*[!0-9]*|'') echo "invalid remote desktop pid file" >&2; exit 79;; esac
+  kill "$pid" 2>/dev/null || true
+  rm -f "$pidfile"
+  sleep 1
 }
 remote_desktop_start_dsh() {
-  nohup dsh --profile web --host "$DSH_REMOTE_DESKTOP_HOST" --port "$DSH_REMOTE_DESKTOP_PORT" --trusted-host "$DSH_REMOTE_DESKTOP_HOST:$DSH_REMOTE_DESKTOP_PORT" > /tmp/dsh-remote-desktop-web.log 2>&1 < /dev/null &
+  nohup dsh --profile web --host "$DSH_REMOTE_DESKTOP_HOST" --port "$DSH_REMOTE_DESKTOP_PORT" --trusted-host "$DSH_REMOTE_DESKTOP_HOST:$DSH_REMOTE_DESKTOP_PORT" > "$DSH_REMOTE_DESKTOP_LOG" 2>&1 < /dev/null &
+  echo $! > "/tmp/dsh-remote-desktop-$DSH_REMOTE_DESKTOP_PORT.pid"
 }
 if ! command -v dsh >/dev/null 2>&1; then
   echo "remote dsh is not installed or is not on PATH" >&2
   exit 127
 fi
 if remote_desktop_has_companion; then
+  remote_desktop_print_auth_url
   exit 0
 fi
 if [ "$DSH_REMOTE_DESKTOP_INSTALL" = "1" ]; then
@@ -309,9 +334,24 @@ if remote_desktop_has_companion; then
   exit 0
 fi
 if remote_desktop_has_dsh; then
+  auth_url=$(remote_desktop_print_auth_url)
+  pidfile="/tmp/dsh-remote-desktop-$DSH_REMOTE_DESKTOP_PORT.pid"
+  if [ -n "$auth_url" ] && [ -f "$pidfile" ]; then
+    pid=$(cat "$pidfile")
+    case "$pid" in (*[!0-9]*|'') :;; (*) if kill -0 "$pid" 2>/dev/null; then printf '%s\\n' "$auth_url"; exit 0; fi;; esac
+  fi
   remote_desktop_stop_listener
 fi
 remote_desktop_start_dsh
+for _ in $(seq 1 100); do
+  if remote_desktop_has_dsh; then
+    auth_url=$(remote_desktop_print_auth_url)
+    if [ -n "$auth_url" ]; then printf '%s\\n' "$auth_url"; exit 0; fi
+  fi
+  sleep 0.2
+done
+echo "remote DSH did not become ready" >&2
+exit 80
 `
 }
 
@@ -346,8 +386,11 @@ async function browseRemoteDirectory(source, input, runtime) {
   const timer = setTimeout(() => { proc.kill() }, 10000)
   let stdout = ''
   let stderr = ''
-  proc.stdout.on('data', chunk => { stdout += String(chunk) })
-  proc.stderr.on('data', chunk => { stderr += String(chunk).slice(0, 4000) })
+  proc.stdout.on('data', chunk => {
+    stdout += String(chunk)
+    if (stdout.length > 1024 * 1024) proc.kill()
+  })
+  proc.stderr.on('data', chunk => { stderr = appendCapped(stderr, chunk) })
   proc.stdin.end(JSON.stringify({ path: input.path, hidden: Boolean(input.hidden) }))
   const code = await new Promise((resolve, reject) => {
     proc.once('error', reject)
@@ -357,15 +400,48 @@ async function browseRemoteDirectory(source, input, runtime) {
   return normalizeBrowseResult(JSON.parse(stdout))
 }
 
-function startProxyServer(targetPort) {
+async function exchangeRemoteAuthCookie(targetPort, upstreamAuthority, authToken) {
+  return await new Promise((resolve, reject) => {
+    const request = httpRequest({
+      host: '127.0.0.1',
+      port: targetPort,
+      method: 'GET',
+      path: authToken ? `/?token=${encodeURIComponent(authToken)}` : '/',
+      headers: { host: upstreamAuthority },
+    }, (response) => {
+      response.resume()
+      const cookies = response.headers['set-cookie'] ?? []
+      const cookie = cookies.map(value => value.split(';', 1)[0]).filter(Boolean).join('; ')
+      const status = response.statusCode ?? 502
+      if (!authToken && status >= 200 && status < 400) resolve(undefined)
+      else if (authToken && status >= 300 && status < 400 && cookie !== '') resolve(cookie)
+      else if (!authToken && status === 401) reject(new Error('remote DSH requires authentication, but its launch token was not available'))
+      else reject(new Error(`remote DSH authentication failed (HTTP ${status})`))
+    })
+    request.once('error', reject)
+    request.end()
+  })
+}
+
+export async function startProxyServer(targetPort, upstreamAuthority, authToken) {
+  const authCookie = await exchangeRemoteAuthCookie(targetPort, upstreamAuthority, authToken)
   const server = createServer((req, res) => {
-    proxyHttp(req, res, targetPort).catch((error) => {
+    proxyHttp(req, res, targetPort, upstreamAuthority, authCookie).catch((error) => {
       if (!res.headersSent) writeError(res, 502, 'proxy_failed', error instanceof Error ? error.message : String(error))
       else res.destroy()
     })
   })
   server.on('upgrade', (req, socket, head) => {
-    proxyUpgrade(req, socket, head, targetPort).catch(() => { socket.destroy() })
+    proxyUpgrade(req, socket, head, targetPort, upstreamAuthority, authCookie).catch(() => { socket.destroy() })
+  })
+  server.on('clientError', (_error, socket) => { socket.destroy() })
+  const sockets = new Set()
+  server.on('connection', (socket) => {
+    sockets.add(socket)
+    // Browser/WebSocket disconnects commonly surface as ECONNRESET. A raw
+    // net.Socket without an error listener would otherwise terminate DSH.
+    socket.on('error', () => {})
+    socket.once('close', () => sockets.delete(socket))
   })
   return new Promise((resolve, reject) => {
     server.once('error', reject)
@@ -375,15 +451,26 @@ function startProxyServer(targetPort) {
         reject(new Error('proxy server has no TCP address'))
         return
       }
-      resolve({ server, port: address.port })
+      resolve({ server, port: address.port, sockets })
     })
   })
 }
 
-async function proxyHttp(req, res, targetPort) {
+export function closeProxy(proxy) {
+  if (proxy === undefined) return
+  for (const socket of proxy.sockets) socket.destroy()
+  proxy.server.close()
+}
+
+async function proxyHttp(req, res, targetPort, upstreamAuthority, authCookie) {
   const headers = { ...req.headers }
-  headers.host = `127.0.0.1:${targetPort}`
-  if (headers.origin !== undefined) headers.origin = `http://127.0.0.1:${targetPort}`
+  headers.host = upstreamAuthority
+  if (headers.origin !== undefined) headers.origin = `http://${upstreamAuthority}`
+  // Loopback cookies are shared across ports. Never forward a cookie from the
+  // local shell or another remote proxy; the proxy-owned upstream session is
+  // the only DSH credential valid for this tunnel.
+  if (authCookie !== undefined) headers.cookie = authCookie
+  else delete headers.cookie
   const upstream = httpRequest({
     host: '127.0.0.1',
     port: targetPort,
@@ -391,23 +478,31 @@ async function proxyHttp(req, res, targetPort) {
     path: req.url,
     headers,
   }, (upstreamRes) => {
-    res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers)
+    const responseHeaders = { ...upstreamRes.headers }
+    // The browser must not persist an upstream DSH cookie on 127.0.0.1, where
+    // it would be sent to every local and remote proxy port.
+    delete responseHeaders['set-cookie']
+    res.writeHead(upstreamRes.statusCode ?? 502, responseHeaders)
     upstreamRes.pipe(res)
   })
   upstream.on('error', (error) => {
     if (!res.headersSent) writeError(res, 502, 'proxy_failed', error.message)
-    else res.destroy(error)
+    else res.destroy()
   })
+  req.on('error', () => { upstream.destroy() })
   req.pipe(upstream)
 }
 
-async function proxyUpgrade(req, socket, head, targetPort) {
+async function proxyUpgrade(req, socket, head, targetPort, upstreamAuthority, authCookie) {
   const upstream = netConnect({ host: '127.0.0.1', port: targetPort })
+  socket.on('error', () => { upstream.destroy() })
   upstream.on('error', () => { socket.destroy() })
   upstream.once('connect', () => {
     const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`]
-    const headers = { ...req.headers, host: `127.0.0.1:${targetPort}` }
-    if (headers.origin !== undefined) headers.origin = `http://127.0.0.1:${targetPort}`
+    const headers = { ...req.headers, host: upstreamAuthority }
+    if (headers.origin !== undefined) headers.origin = `http://${upstreamAuthority}`
+    if (authCookie !== undefined) headers.cookie = authCookie
+    else delete headers.cookie
     for (const [key, value] of Object.entries(headers)) {
       if (Array.isArray(value)) for (const item of value) lines.push(`${key}: ${item}`)
       else if (value !== undefined) lines.push(`${key}: ${value}`)
@@ -417,50 +512,6 @@ async function proxyUpgrade(req, socket, head, targetPort) {
     upstream.pipe(socket)
     socket.pipe(upstream)
   })
-}
-
-
-async function proxyHostApi(req, res, source) {
-  const runtime = runtimesForProxy.get(source.id)
-  if (runtime?.state !== 'connected' || runtime.tunnelPort === undefined) throw new Error('source is not connected')
-  const url = new URL(req.url ?? '/', 'http://local')
-  const path = url.searchParams.get('path') ?? '/'
-  if (!path.startsWith('/api/')) throw new Error('host API path must start with /api/')
-  const headers = { ...req.headers }
-  delete headers.host
-  if (headers.origin !== undefined) headers.origin = `http://127.0.0.1:${runtime.tunnelPort}`
-  const upstream = httpRequest({
-    host: '127.0.0.1',
-    port: runtime.tunnelPort,
-    method: req.method,
-    path,
-    headers: { ...headers, host: `127.0.0.1:${runtime.tunnelPort}` },
-  }, (upstreamRes) => {
-    res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers)
-    upstreamRes.pipe(res)
-  })
-  upstream.on('error', (error) => {
-    if (!res.headersSent) writeError(res, 502, 'proxy_failed', error.message)
-    else res.destroy(error)
-  })
-  req.pipe(upstream)
-}
-
-let runtimesForProxy
-
-async function rpc(port, method, payload = {}) {
-  const rpcId = randomUUID()
-  const response = await fetch(`http://127.0.0.1:${port}/api/${method}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
-    signal: AbortSignal.timeout(10000),
-  })
-  if (!response.ok) throw new Error(`remote ${method} HTTP ${response.status}`)
-  const parsed = await response.json()
-  if (parsed.rpcId !== rpcId) throw new Error(`remote ${method} rpcId mismatch`)
-  if (!parsed.result?.ok) throw new Error(parsed.result?.error?.message ?? `remote ${method} failed`)
-  return parsed.result.value
 }
 
 
@@ -480,12 +531,12 @@ async function probeRemoteCompanion(port) {
   if (!html.includes(REMOTE_COMPANION_PACKAGE)) throw new Error('remote companion is not installed or is not enabled in the remote web profile')
 }
 
-async function verifyRemoteReady(port) {
+async function verifyRemoteReady(port, signal) {
   const deadline = Date.now() + 60000
   let lastError
   while (Date.now() < deadline) {
+    if (signal?.aborted) throw signal.reason ?? new Error('connection aborted')
     try {
-      await rpc(port, 'host.describe', {})
       await probeRemoteCompanion(port)
       return
     } catch (error) {
@@ -510,16 +561,23 @@ function sshFailureMessage(source, phase, code, signal, stdout, stderr) {
   return `${phase} failed for ${sourceSshLabel(source)} (${status})${reason ? `: ${reason}` : ''}`
 }
 
-async function runSsh(source, args, phase) {
+function appendCapped(current, chunk, limit = 4000) {
+  return `${current}${String(chunk)}`.slice(-limit)
+}
+
+async function runSsh(source, args, phase, signal) {
   const proc = spawn('ssh', args, { stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
-  proc.stdout.on('data', chunk => { stdout += String(chunk).slice(0, 4000) })
-  proc.stderr.on('data', chunk => { stderr += String(chunk).slice(0, 4000) })
+  proc.stdout.on('data', chunk => { stdout = appendCapped(stdout, chunk) })
+  proc.stderr.on('data', chunk => { stderr = appendCapped(stderr, chunk) })
+  const abort = () => { proc.kill() }
+  signal?.addEventListener('abort', abort, { once: true })
   const result = await new Promise((resolve, reject) => {
     proc.once('error', error => reject(new Error(`${phase} failed for ${sourceSshLabel(source)}: ${error.message}`)))
     proc.once('exit', (code, signal) => resolve({ code, signal }))
-  })
+  }).finally(() => signal?.removeEventListener('abort', abort))
+  if (signal?.aborted) throw signal.reason ?? new Error(`${phase} aborted`)
   if (result.code !== 0) throw new Error(sshFailureMessage(source, phase, result.code, result.signal, stdout, stderr))
   return stdout
 }
@@ -531,14 +589,45 @@ async function waitForSshTunnel(source, proc, port, stderrRef, signal) {
   await Promise.race([waitTcp(port, signal), exited])
 }
 
-async function setupRemoteCompanion(source, options = { install: true }) {
-  await runSsh(source, buildRemoteSetupSshArgs(source, options), options.install === true ? 'remote setup over SSH' : 'remote auto-start over SSH')
+async function setupRemoteCompanion(source, options = { install: true }, signal) {
+  return await runSsh(source, buildRemoteSetupSshArgs(source, options), options.install === true ? 'remote setup over SSH' : 'remote auto-start over SSH', signal)
+}
+
+function authTokenFromSetupOutput(output) {
+  const lines = String(output).trim().split(/\r?\n/)
+  for (const line of lines.reverse()) {
+    try {
+      const token = new URL(line.trim()).searchParams.get('token')
+      if (token) return token
+    } catch {}
+  }
+  return undefined
 }
 
 export async function apply(ctx) {
   let sources = await loadSources()
+  let disposed = false
   const runtimes = new Map()
-  runtimesForProxy = runtimes
+  const sourceEventClients = new Set()
+  const publishSourcesChanged = () => {
+    for (const res of [...sourceEventClients]) {
+      if (res.destroyed) sourceEventClients.delete(res)
+      else res.write(`data: ${Date.now()}\n\n`)
+    }
+  }
+
+  const scheduleReconnect = (id, runtime) => {
+    if (runtime.reconnectTimer !== undefined || runtime.abort.signal.aborted) return
+    const configured = sources.find(item => item.id === id)
+    if (configured?.autoConnect !== true) return
+    const attempt = Math.min(runtime.reconnectAttempt + 1, 6)
+    runtime.reconnectTimer = setTimeout(() => {
+      if (runtimes.get(id) !== runtime) return
+      runtimes.delete(id)
+      void connectSource(id, { startPrepared: true, reconnectAttempt: attempt }).catch(() => {})
+    }, Math.min(1000 * (2 ** attempt), 30000))
+    runtime.reconnectTimer.unref?.()
+  }
 
   async function persist(next) {
     await saveSources(next)
@@ -546,6 +635,7 @@ export async function apply(ctx) {
   }
 
   async function connectSource(id, options = {}) {
+    if (disposed) throw new Error('remote desktop plugin is disposed')
     sources = await loadSources()
     const source = sources.find(item => item.id === id)
     if (source === undefined) throw new Error(`unknown source ${id}`)
@@ -555,11 +645,17 @@ export async function apply(ctx) {
       disconnectSource(id)
     }
 
-    const runtime = { state: 'connecting', error: null, token: randomUUID() }
+    const runtime = {
+      state: 'connecting', error: null, token: randomUUID(),
+      abort: new AbortController(), reconnectAttempt: options.reconnectAttempt ?? 0,
+    }
     runtimes.set(id, runtime)
+    publishSourcesChanged()
     try {
-      if (options.setup === true) await setupRemoteCompanion(source, { install: true })
-      else if (options.startPrepared === true) await setupRemoteCompanion(source, { install: false })
+      let setupOutput = ''
+      if (options.setup === true) setupOutput = await setupRemoteCompanion(source, { install: true }, runtime.abort.signal)
+      else if (options.startPrepared === true) setupOutput = await setupRemoteCompanion(source, { install: false }, runtime.abort.signal)
+      runtime.authToken = authTokenFromSetupOutput(setupOutput)
       if (runtimes.get(id) !== runtime) throw new Error('connection superseded')
       const tunnelPort = await freePort()
       const sshArgs = [
@@ -573,29 +669,40 @@ export async function apply(ctx) {
       const proc = spawn('ssh', sshArgs, { stdio: ['ignore', 'ignore', 'pipe'] })
       runtime.ssh = proc
       let stderr = ''
-      proc.stderr.on('data', chunk => { stderr += String(chunk).slice(0, 4000) })
+      proc.stderr.on('data', chunk => { stderr = appendCapped(stderr, chunk) })
       proc.once('exit', (code, signal) => {
         const current = runtimes.get(id)
         if (current !== runtime) return
         current.state = 'disconnected'
         current.error = stderr.trim() || `ssh exited (${code ?? signal ?? 'unknown'})`
-        current.proxy?.server.close()
+        closeProxy(current.proxy)
+        publishSourcesChanged()
+        scheduleReconnect(id, current)
       })
-      const abort = new AbortController()
-      await waitForSshTunnel(source, proc, tunnelPort, () => stderr, abort.signal)
-      await verifyRemoteReady(tunnelPort)
-      const proxy = await startProxyServer(tunnelPort)
+      await waitForSshTunnel(source, proc, tunnelPort, () => stderr, runtime.abort.signal)
+      await verifyRemoteReady(tunnelPort, runtime.abort.signal)
+      if (runtimes.get(id) !== runtime || runtime.abort.signal.aborted) throw new Error('connection superseded')
+      const upstreamAuthority = `${source.remoteDshHost}:${source.remoteDshPort}`
+      const proxy = await startProxyServer(tunnelPort, upstreamAuthority, runtime.authToken)
+      if (runtimes.get(id) !== runtime || runtime.abort.signal.aborted) {
+        closeProxy(proxy)
+        throw new Error('connection superseded')
+      }
       runtime.tunnelPort = tunnelPort
       runtime.proxy = proxy
       runtime.iframeUrl = `http://127.0.0.1:${proxy.port}/?dshRemoteDesktop=1#token=${encodeURIComponent(runtime.token)}`
       runtime.state = 'connected'
       runtime.error = null
+      runtime.reconnectAttempt = 0
+      publishSourcesChanged()
       return runtime
     } catch (error) {
       runtime.state = 'error'
       runtime.error = error instanceof Error ? error.message : String(error)
       runtime.ssh?.kill()
-      runtime.proxy?.server.close()
+      closeProxy(runtime.proxy)
+      publishSourcesChanged()
+      if (runtimes.get(id) === runtime) scheduleReconnect(id, runtime)
       throw error
     }
   }
@@ -605,35 +712,37 @@ export async function apply(ctx) {
     if (runtime === undefined) return
     runtime.state = 'disconnected'
     runtime.error = null
+    runtime.abort?.abort(new Error('source disconnected'))
+    if (runtime.reconnectTimer !== undefined) clearTimeout(runtime.reconnectTimer)
     runtime.ssh?.kill()
-    runtime.proxy?.server.close()
+    closeProxy(runtime.proxy)
     runtimes.delete(id)
-  }
-
-  async function snapshotSource(id) {
-    const runtime = runtimes.get(id)
-    if (runtime?.state !== 'connected' || runtime.tunnelPort === undefined) throw new Error('source is not connected')
-    const [sessions, workspaces] = await Promise.all([
-      rpc(runtime.tunnelPort, 'session.list', {}),
-      rpc(runtime.tunnelPort, 'workspace.list', {}),
-    ])
-    return { sessions, workspaces }
+    publishSourcesChanged()
   }
 
   const disposeRoute = ctx.webServer.register({
     kind: 'prefix',
     path: API_PREFIX,
     handler: async (req, res) => {
+      const rejection = ctx.connection.requestRejection(req)
+      if (rejection !== undefined) {
+        res.writeHead(rejection)
+        res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+        return
+      }
       const pathname = new URL(req.url ?? '/', 'http://local').pathname
       const suffix = pathname.slice(API_PREFIX.length) || '/'
       try {
-        if (suffix === '/host-api') {
-          const url = new URL(req.url ?? '/', 'http://local')
-          const id = url.searchParams.get('id') ?? ''
-          sources = await loadSources()
-          const source = sources.find(item => item.id === id)
-          if (source === undefined) throw new Error(`unknown source ${id}`)
-          await proxyHostApi(req, res, source)
+        if (req.method === 'GET' && suffix === '/events') {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-store',
+            connection: 'keep-alive',
+          })
+          sourceEventClients.add(res)
+          res.write(`data: ${Date.now()}\n\n`)
+          const timer = setInterval(() => { if (!res.destroyed) res.write(': keepalive\n\n') }, 15000)
+          req.once('close', () => { clearInterval(timer); sourceEventClients.delete(res) })
           return
         }
         if (req.method === 'GET' && suffix === '/sources') {
@@ -659,7 +768,8 @@ export async function apply(ctx) {
         if (req.method === 'POST' && suffix === '/connect') {
           const { id, setup } = await readJson(req)
           const defaultSetup = process.env.DSH_REMOTE_DESKTOP_SKIP_SETUP !== '1'
-          const runtime = await connectSource(String(id), { setup: setup ?? defaultSetup })
+          const shouldInstall = setup ?? defaultSetup
+          const runtime = await connectSource(String(id), shouldInstall ? { setup: true } : { startPrepared: true })
           const source = sources.find(item => item.id === String(id))
           writeJson(res, 200, { ok: true, source: publicSource(source, runtime) })
           return
@@ -688,11 +798,6 @@ export async function apply(ctx) {
           writeJson(res, 200, { ok: true, ...(await browseRemoteDirectory(source, { path, hidden }, runtimes.get(id))) })
           return
         }
-        if (req.method === 'GET' && suffix === '/snapshot') {
-          const id = new URL(req.url ?? '/', 'http://local').searchParams.get('id') ?? ''
-          writeJson(res, 200, { ok: true, snapshot: await snapshotSource(id) })
-          return
-        }
         writeError(res, 404, 'not_found', `unknown remote-desktop route ${suffix}`)
       } catch (error) {
         writeError(res, 400, 'remote_desktop_error', error instanceof Error ? error.message : String(error))
@@ -702,11 +807,15 @@ export async function apply(ctx) {
 
   ctx.effect(() => disposeRoute, 'dsh-remote-desktop: management routes')
   ctx.effect(() => () => {
+    disposed = true
+    for (const res of sourceEventClients) res.end()
+    sourceEventClients.clear()
     for (const id of [...runtimes.keys()]) disconnectSource(id)
   }, 'dsh-remote-desktop: runtime cleanup')
 
   void (async () => {
     sources = await loadSources()
-    await Promise.allSettled(sources.map(source => connectSource(source.id, { startPrepared: true })))
+    if (disposed) return
+    await Promise.allSettled(sources.filter(source => source.autoConnect === true).map(source => connectSource(source.id, { startPrepared: true })))
   })()
 }

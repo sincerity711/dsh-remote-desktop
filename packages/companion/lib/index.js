@@ -3,9 +3,13 @@ export const inject = ['webServer']
 
 const HEALTH_PATH = '/remote-desktop-companion/api/health'
 
+/**
+ * Transitional package-readiness probe. Session and Workspace data always use
+ * the authenticated DSH Client Controller running inside the remote iframe.
+ */
 export function apply(ctx) {
-  const disposeRoute = ctx.webServer.register({
-    kind: 'prefix',
+  const disposeHealth = ctx.webServer.register({
+    kind: 'exact',
     path: HEALTH_PATH,
     handler: (_req, res) => {
       res.writeHead(200, {
@@ -15,5 +19,5 @@ export function apply(ctx) {
       res.end(JSON.stringify({ ok: true, name }))
     },
   })
-  ctx.effect(() => disposeRoute, 'dsh-remote-desktop-companion: health route')
+  ctx.effect(() => disposeHealth, 'dsh-remote-desktop-companion: readiness route')
 }

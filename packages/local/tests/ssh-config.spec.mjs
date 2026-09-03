@@ -64,3 +64,11 @@ test('remote setup SSH command can start only prepared profiles for auto-connect
   assert.match(command, /if \[ "\$DSH_REMOTE_DESKTOP_INSTALL" = "1" \]; then/)
   assert.match(command, /elif ! remote_desktop_companion_configured; then/)
 })
+
+test('remote setup treats authenticated HTTP as ready and returns the launch token', () => {
+  const command = buildRemoteSetupSshArgs({ sshAlias: 'win-wsl', remoteDshHost: '127.0.0.1', remoteDshPort: 30800 }, { install: false }).at(-1)
+  assert.match(command, /fetch\(url\)\.then\(\(\)=>process\.exit\(0\),\(\)=>process\.exit\(1\)\)/)
+  assert.match(command, /auth_url=\$\(remote_desktop_print_auth_url\)/)
+  assert.match(command, /if \[ -n "\$auth_url" \]/)
+  assert.match(command, /kill -0 "\$pid"/)
+})

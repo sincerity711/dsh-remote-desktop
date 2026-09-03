@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(__dirname, '../..')
 const args = parseArgs(process.argv.slice(2))
 const command = args._[0] ?? 'help'
-const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'deepseek-harness'))
+const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'dsh'))
 const stateDir = join(repoRoot, '.acceptance', 'container')
 const sshKey = join(stateDir, 'id_ed25519')
 const sshPub = `${sshKey}.pub`
@@ -34,6 +34,8 @@ const remotes = [
   { id: 'remote-b', container: 'dsh-rd-remote-b', sshPort: Number(process.env.DSH_RD_REMOTE_B_SSH_PORT ?? 30222), text: 'REMOTE_SENTINEL_B', title: 'Remote B isolation walkthrough' },
 ]
 const started = []
+let localDshOutput = ''
+let localAuthCookie = ''
 let remoteProxyExports = ''
 
 process.on('exit', stopStarted)
@@ -91,7 +93,7 @@ async function canary() {
   for (const remote of remotes) await setupRemote(remote, seed, hostProxy.ollamaBaseUrl)
   const local = await setupLocal(seed)
   for (const remote of remotes) {
-    const source = (await api(local.base, '/connect', { method: 'POST', body: JSON.stringify({ id: remote.id }) })).source
+    const source = (await api(local.base, '/connect', { method: 'POST', body: JSON.stringify({ id: remote.id, setup: false }) })).source
     if (source.state !== 'connected') throw new Error(`${remote.id} did not connect: ${source.state}`)
   }
   console.log(`\nCanary Remote Desktop environment ready.\n\nLocal DSH:\n  ${local.base}\n\nSSH:\n  ssh -F ${sshConfig} remote-a\n  ssh -F ${sshConfig} remote-b\n\nCleanup:\n  npm run acceptance:container:down\n  npm run acceptance:container:clean\n\nPress Ctrl-C to stop only the local DSH process. Remote containers stay running.`)
@@ -132,16 +134,14 @@ async function setupRemote(remote, seed, ollamaBaseUrl) {
     mkdir -p "$HOME/.npm-global"
     npm config set prefix "$HOME/.npm-global"
     export PATH="$HOME/.npm-global/bin:$PATH"
-    listeners=$(lsof -tiTCP:${remotePort} -sTCP:LISTEN 2>/dev/null || true)
+    listeners=$(ps -eo pid=,args= | awk '$2 ~ /(^|\\/)node$/ && $0 ~ /\\/dsh --profile web/ && $0 ~ /--port ${remotePort}([[:space:]]|$)/ {print $1}')
     if [ -n "$listeners" ]; then kill $listeners 2>/dev/null || true; fi
+    rm -f /tmp/dsh-remote-desktop-web.pid /tmp/dsh-rd-*.pid /tmp/dsh-remote-desktop-${remotePort}.pid
     for attempt in 1 2 3 4 5; do
-      if ! lsof -tiTCP:${remotePort} -sTCP:LISTEN >/dev/null 2>&1; then break; fi
+      if node -e "const s=require('node:net').createServer();s.once('error',()=>process.exit(1));s.listen(${remotePort},'127.0.0.1',()=>s.close(()=>process.exit(0)))"; then break; fi
       sleep 1
     done
-    if lsof -tiTCP:${remotePort} -sTCP:LISTEN >/dev/null 2>&1; then
-      echo "remote DSH port ${remotePort} did not stop" >&2
-      exit 1
-    fi
+    node -e "const s=require('node:net').createServer();s.once('error',()=>process.exit(1));s.listen(${remotePort},'127.0.0.1',()=>s.close(()=>process.exit(0)))" || { echo 'remote DSH port ${remotePort} did not stop' >&2; exit 1; }
     rm -rf /tmp/dsh-rd-canary
     mkdir -p /tmp/dsh-rd-canary
     cat > /tmp/dsh-rd-canary/remote-only.txt <<'TEXT'
@@ -150,7 +150,7 @@ TEXT
     cat > /tmp/dsh-rd-canary/README.md <<'TEXT'
 ${body}
 TEXT
-    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.1-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.1.1-rc.2 --force; fi
+    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.2-alpha.4" ]; then npm install -g @deepseek-ai/dsh@0.1.2-alpha.4 --force; fi
     if [ ! -f ~/.dsh-remote-desktop-canary/profiles/web/package.json ]; then
       DSH_HOME=~/.dsh-remote-desktop-canary dsh --profile web --dump-config >/tmp/dsh-rd-canary-dump.txt
     fi
@@ -160,7 +160,7 @@ const fs = require('fs')
 const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-canary-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
-pkg.dependencies['dsh-better-sidebar'] = '^0.12.2'
+pkg.dependencies['dsh-better-sidebar'] = '0.12.2'
 pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
@@ -178,15 +178,23 @@ ${ollamaSettings(ollamaBaseUrl)}SETTINGS
     if [ ! -d node_modules/dsh-better-sidebar ] || [ ! -e node_modules/dsh-remote-desktop-companion ]; then
       CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true >/tmp/dsh-rd-canary-install.log 2>&1
     fi
+    node - <<'NODE'
+const fs = require('fs')
+const path = 'node_modules/dsh-better-sidebar/lib/index.js'
+let source = fs.readFileSync(path, 'utf8')
+source = source.replace('import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";', 'import { SettingsConflictError } from "@deepseek-ai/dsh-settings";')
+source = source.replace('const ns = settingsNamespace(SIDEBAR_PREFS_NS);', 'const ns = SIDEBAR_PREFS_NS;')
+fs.writeFileSync(path, source)
+NODE
     pnpm rebuild node-pty >/tmp/dsh-rd-canary-node-pty.log 2>&1 || true
     node --input-type=module -e ${sh(verifyOllama)}
-    nohup env DSH_HOME=~/.dsh-remote-desktop-canary DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-rd-canary.log 2>&1 & echo $! > /tmp/dsh-rd-canary.pid
+    nohup env DSH_HOME=~/.dsh-remote-desktop-canary DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-remote-desktop-${remotePort}.log 2>&1 & echo $! > /tmp/dsh-rd-canary.pid
   `, { timeoutMs: 300000 })
   await waitRemoteDsh(remote.id)
-  const workspace = await remoteRpc(remote.id, 'workspace.create', { path: '/tmp/dsh-rd-canary' })
-  const session = await remoteRpc(remote.id, 'session.create', { workspaceId: workspace.workspace.workspaceId })
-  await remoteRpc(remote.id, 'session.rename', { sessionId: session.sessionId, title: remote.title })
-  await assertOllamaDefault(await remoteRpc(remote.id, 'session.models', { sessionId: session.sessionId }), remote.id)
+  const workspace = await remoteRpc(remote.id, 'workspace/create', { path: '/tmp/dsh-rd-canary' })
+  const session = await remoteRpc(remote.id, 'session/create', { workspaceId: workspace.workspace.workspaceId })
+  await remoteRpc(remote.id, 'session/rename', { sessionId: session.sessionId, title: remote.title })
+  await assertOllamaDefault(await remoteRpc(remote.id, 'session/modelCatalog', {}), remote.id)
 }
 
 async function setupLocal(seed) {
@@ -205,14 +213,15 @@ async function setupLocal(seed) {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   started.push(child)
-  child.stdout.on('data', b => process.stdout.write(`[local dsh] ${b}`))
-  child.stderr.on('data', b => process.stderr.write(`[local dsh] ${b}`))
+  child.stdout.on('data', b => { localDshOutput += String(b); process.stdout.write(`[local dsh] ${b}`) })
+  child.stderr.on('data', b => { localDshOutput += String(b); process.stderr.write(`[local dsh] ${b}`) })
   const base = `http://127.0.0.1:${port}`
+  localAuthCookie = await authenticateLocal(base, () => localDshOutput)
   await waitRemoteDesktopApi(base, 60000)
-  const workspace = await rpc(base, 'workspace.create', { path: canaryWorkspace })
-  const session = await rpc(base, 'session.create', { workspaceId: workspace.workspace.workspaceId })
-  await rpc(base, 'session.rename', { sessionId: session.sessionId, title: 'Local notes - Apple container acceptance overview' })
-  await assertOllamaDefault(await rpc(base, 'session.models', { sessionId: session.sessionId }), 'local')
+  const workspace = await rpc(base, 'workspace/create', { path: canaryWorkspace })
+  const session = await rpc(base, 'session/create', { workspaceId: workspace.workspace.workspaceId })
+  await rpc(base, 'session/rename', { sessionId: session.sessionId, title: 'Local notes - Apple container acceptance overview' })
+  await assertOllamaDefault(await rpc(base, 'session/modelCatalog', {}), 'local')
   return { base }
 }
 
@@ -274,9 +283,9 @@ function ollamaSettings(baseUrl) {
   return `agent-default-model:\n  provider: ollama\n  model: ${JSON.stringify(ollamaModel)}\nllm-pi-ai:\n  providers:\n    ollama:\n      displayName: Local Ollama\n      api: openai-completions\n      apiKeyEnv: ${ollamaApiKeyEnv}\n      baseURL: ${baseUrl}\n      models:\n        - id: ${JSON.stringify(ollamaModel)}\n          name: MiniCPM V 4.6 1B\n`
 }
 
-async function assertOllamaDefault(models, owner) {
-  if (models.current?.provider !== 'ollama' || models.current?.model !== ollamaModel || models.routable !== true) {
-    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(models.current)}`)
+async function assertOllamaDefault(catalog, owner) {
+  if (catalog.default?.provider !== 'ollama' || catalog.default?.model !== ollamaModel || !catalog.routableProviders?.includes('ollama')) {
+    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(catalog.default)}`)
   }
 }
 
@@ -339,9 +348,9 @@ async function waitSsh(alias) {
 async function waitRemoteDsh(alias) {
   const deadline = Date.now() + 60000
   while (Date.now() < deadline) {
-    try { await remoteRpc(alias, 'host.describe', {}); return } catch { await delay(1000) }
+    try { const result = await remoteCompanionHealth(alias); if (result.ok) return } catch { await delay(1000) }
   }
-  const log = await ssh(alias, 'cat /tmp/dsh-rd-canary.log 2>/dev/null || true').catch(() => '')
+  const log = await ssh(alias, `cat /tmp/dsh-remote-desktop-${remotePort}.log 2>/dev/null || true`).catch(() => '')
   throw new Error(`${alias} DSH did not boot. Log:\n${log}`)
 }
 
@@ -367,21 +376,63 @@ async function patchLocalProfile(profile) {
 
 async function runHarness(argv, env, timeoutMs) { return await cmd('pnpm', ['dsh', ...argv], { cwd: harnessRoot, env, timeoutMs }) }
 
-async function remoteRpc(alias, method, payload) {
-  const script = `const method=${JSON.stringify(method)};const payload=${JSON.stringify(payload)};const rpcId=crypto.randomUUID();const res=await fetch('http://127.0.0.1:${remotePort}/api/'+method,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'client-request',rpcId,method,payload})});if(!res.ok)throw new Error('HTTP '+res.status);const json=await res.json();if(!json.result?.ok)throw new Error(json.result?.error?.message||'rpc failed');console.log(JSON.stringify(json.result.value));`
+async function remoteCompanionHealth(alias) {
+  const script = `const res=await fetch('http://127.0.0.1:${remotePort}/remote-desktop-companion/api/health');if(!res.ok)throw new Error('HTTP '+res.status);console.log(await res.text());`
   return JSON.parse(await ssh(alias, `node --input-type=module -e ${sh(script)}`))
+}
+
+async function remoteRpc(alias, method, payload) {
+  const script = `
+const fs = await import('node:fs/promises')
+const log = await fs.readFile('/tmp/dsh-remote-desktop-${remotePort}.log', 'utf8')
+const token = /[?&]token=([A-Za-z0-9_-]+)/.exec(log)?.[1]
+if (!token) throw new Error('remote DSH launch token missing')
+const login = await fetch('http://127.0.0.1:${remotePort}/?token=' + token, { redirect: 'manual' })
+const cookie = login.headers.get('set-cookie')?.split(';', 1)[0]
+if (!cookie) throw new Error('remote DSH auth cookie missing')
+const method = ${JSON.stringify(method)}
+const rawPayload = ${JSON.stringify(payload)}
+const request = method === 'session/prompt' ? { requestId: crypto.randomUUID(), ...rawPayload } : rawPayload
+const args = method === 'session/modelCatalog' ? {} : { request }
+const rpcId = crypto.randomUUID()
+const res = await fetch('http://127.0.0.1:${remotePort}/api/' + method, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', cookie },
+  body: JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } }),
+})
+const json = await res.json()
+if (!res.ok || !json.result?.ok) throw new Error(json.result?.error?.message || 'HTTP ' + res.status)
+console.log(JSON.stringify(json.result.value))
+`
+  return JSON.parse(await ssh(alias, `node --input-type=module -e ${sh(script)}`))
+}
+
+async function authenticateLocal(base, output) {
+  const deadline = Date.now() + 60000
+  while (Date.now() < deadline) {
+    const token = /[?&]token=([A-Za-z0-9_-]+)/.exec(output())?.[1]
+    if (token) {
+      const response = await fetch(`${base}/?token=${token}`, { redirect: 'manual' })
+      const cookie = response.headers.get('set-cookie')?.split(';', 1)[0]
+      if (cookie) return cookie
+    }
+    await delay(100)
+  }
+  throw new Error('local DSH auth token was not printed')
 }
 
 async function rpc(base, method, payload) {
   const rpcId = randomUUID()
-  const res = await fetch(`${base}/api/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId, method, payload }) })
+  const request = method === 'session/prompt' ? { requestId: randomUUID(), ...payload } : payload
+  const args = method === 'session/modelCatalog' ? {} : { request }
+  const res = await fetch(`${base}/api/${method}`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: localAuthCookie }, body: JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } }) })
   const json = await res.json()
   if (!json.result?.ok) throw new Error(json.result?.error?.message || `${method} failed`)
   return json.result.value
 }
 
 async function api(base, path, init) {
-  const res = await fetch(`${base}/remote-desktop/api${path}`, { headers: { 'content-type': 'application/json' }, ...init })
+  const res = await fetch(`${base}/remote-desktop/api${path}`, { headers: { 'content-type': 'application/json', cookie: localAuthCookie }, ...init })
   const json = await res.json().catch(() => null)
   if (!res.ok || json?.ok !== true) throw new Error(json?.error?.message || `management ${path} HTTP ${res.status}`)
   return json
@@ -391,7 +442,7 @@ async function waitRemoteDesktopApi(base, timeoutMs) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${base}/remote-desktop/api/hosts`)
+      const res = await fetch(`${base}/remote-desktop/api/hosts`, { headers: { cookie: localAuthCookie } })
       const json = await res.json()
       if (json.ok === true) return
     } catch {}

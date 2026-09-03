@@ -2,7 +2,9 @@
 
 Remote companion plugin for `dsh-remote-desktop`.
 
-Install it in each remote DSH web profile that should be embedded by the local Remote Desktop controller. It exposes a local health endpoint for the controller, runs only in `?dshRemoteDesktop=1` iframe mode, validates parent origin/token messages, opens requested remote sessions, and hides the embedded remote left sidebar.
+Install it in each remote DSH web profile that should be embedded by the local Remote Desktop controller. It exposes only a transitional local health endpoint, runs only in `?dshRemoteDesktop=1` iframe mode, validates parent origin/token messages, forwards official Client Controller state and commands over a versioned `MessageChannel`, opens requested remote sessions, and hides the embedded remote left sidebar.
+
+The companion does not expose Session/Workspace snapshot or RPC Host APIs. The authenticated remote DSH Gateway and its official `ctx.sessions` / `ctx.workspaces` services remain the only business-data path.
 
 ## Install
 
@@ -15,6 +17,9 @@ Before npm publication, install from a local checkout on the remote machine/prof
 ```sh
 dsh plugin --profile web add /path/to/dsh-remote-desktop/packages/companion
 ```
+
+The iframe client source is `src/client.js`; `lib/client.js` is generated with
+the repository-level `npm run build` command.
 
 ## Architecture
 

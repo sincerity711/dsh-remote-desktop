@@ -14,7 +14,7 @@ const args = parseArgs(process.argv.slice(2))
 const containerRemotes = args['container-remotes'] === 'true' || args['docker-remotes'] === 'true'
 const sshDest = args['ssh-dest'] ?? (containerRemotes ? 'remote-a' : 'win-wsl')
 const dshBin = process.env.DSH_BIN ?? 'dsh'
-const harnessRoot = args['harness-root'] ?? process.env.DSH_HARNESS_ROOT
+const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'dsh'))
 const localHome = resolve(repoRoot, '.acceptance', 'p1-local-home')
 const containerSshConfig = join(repoRoot, '.acceptance', 'container', 'ssh-config')
 const localSshConfig = containerRemotes ? containerSshConfig : join(localHome, 'ssh-config')
@@ -36,6 +36,7 @@ const report = []
 const started = []
 let localBase = ''
 let localLog = ''
+let localAuthCookie = ''
 let browserLogs = []
 let localSessionId = ''
 let remoteProxyExports = ''
@@ -62,9 +63,9 @@ function ollamaSettings(baseUrl) {
   return `agent-default-model:\n  provider: ollama\n  model: ${JSON.stringify(ollamaModel)}\nllm-pi-ai:\n  providers:\n    ollama:\n      displayName: Local Ollama\n      api: openai-completions\n      apiKeyEnv: ${ollamaApiKeyEnv}\n      baseURL: ${baseUrl}\n      models:\n        - id: ${JSON.stringify(ollamaModel)}\n          name: MiniCPM V 4.6 1B\n`
 }
 
-async function assertOllamaDefault(models, owner) {
-  if (models.current?.provider !== 'ollama' || models.current?.model !== ollamaModel || models.routable !== true) {
-    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(models.current)}`)
+async function assertOllamaDefault(catalog, owner) {
+  if (catalog.default?.provider !== 'ollama' || catalog.default?.model !== ollamaModel || !catalog.routableProviders?.includes('ollama')) {
+    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(catalog.default)}`)
   }
 }
 
@@ -88,12 +89,14 @@ try {
       remote.token = source.token
       remote.proxyOrigin = new URL(source.iframeUrl).origin
       if (source.state !== 'connected') throw new Error(`${remote.id} not connected`)
-      const workspace = await remoteRpc(remote, 'workspace.create', { path: remote.sentinel })
-      const session = await remoteRpc(remote, 'session.create', { workspaceId: workspace.workspace.workspaceId })
+      await assertIframeAuthenticated(remote)
+      const workspace = await remoteRpc(remote, 'workspace/create', { path: remote.sentinel })
+      const session = await remoteRpc(remote, 'session/create', { workspaceId: workspace.workspace.workspaceId })
       remote.sessionId = session.sessionId
-      await assertOllamaDefault(await remoteRpc(remote, 'session.models', { sessionId: remote.sessionId }), remote.id)
-      await remoteRpc(remote, 'session.prompt', { sessionId: remote.sessionId, mode: 'queue', content: [{ type: 'text', text: `Acceptance fixture for ${remote.id}.` }] })
-      await remoteRpc(remote, 'session.cancel', { sessionId: remote.sessionId })
+      await assertOllamaDefault(await remoteRpc(remote, 'session/modelCatalog', {}), remote.id)
+      await remoteRpc(remote, 'session/rename', { sessionId: remote.sessionId, title: `Acceptance fixture for ${remote.id}` })
+      await remoteRpc(remote, 'session/prompt', { sessionId: remote.sessionId, mode: 'queue', content: [{ type: 'text', text: `Acceptance fixture for ${remote.id}.` }] })
+      await remoteRpc(remote, 'session/cancel', { sessionId: remote.sessionId })
     }
     return remotes.map(r => `${r.id}:${r.proxyOrigin}`).join(', ')
   })
@@ -103,17 +106,12 @@ try {
     return `${remotes[0].proxyOrigin} != ${remotes[1].proxyOrigin}`
   })
 
-  await item('P1-MULTI-004', 'explorer does not cross source snapshots', async () => {
+  await item('P1-MULTI-004', 'explorer does not cross sources', async () => {
     for (const remote of remotes) {
-      const snapshot = await api(`/snapshot?id=${encodeURIComponent(remote.id)}`)
-      const paths = snapshot.snapshot.workspaces.items.map(ws => ws.path)
-      if (!paths.includes(remote.sentinel)) throw new Error(`${remote.id} own sentinel missing`)
-      const other = remotes.find(r => r !== remote)
-      if (paths.includes(other.sentinel)) throw new Error(`${remote.id} snapshot contains ${other.sentinel}`)
       const tree = await sidebarApi(remote, 'fs.tree', { sessionId: remote.sessionId, cwd: remote.sentinel, path: remote.sentinel })
       if (!tree.entries.some(e => e.name === 'remote-only.txt')) throw new Error(`${remote.id} fs.tree missing sentinel file`)
     }
-    return 'each source snapshot and fs.tree stayed on its own sentinel workspace'
+    return 'each source fs.tree stayed on its own sentinel workspace'
   })
 
   await item('P1-MULTI-005', 'terminal does not cross source commands', async () => {
@@ -144,29 +142,45 @@ async function browserMultiChecks() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.on('console', msg => browserLogs.push(`${msg.type()}: ${msg.text()}`))
   page.on('pageerror', err => browserLogs.push(`pageerror: ${err.message}`))
+  page.on('requestfailed', request => browserLogs.push(`requestfailed: ${request.url()} ${request.failure()?.errorText ?? ''}`))
+  page.on('response', response => { if (response.status() >= 400) browserLogs.push(`response: ${response.status()} ${response.url()}`) })
   try {
+    const separator = localAuthCookie.indexOf('=')
+    await page.context().addCookies([{
+      name: localAuthCookie.slice(0, separator),
+      value: localAuthCookie.slice(separator + 1),
+      url: localBase,
+    }])
     await page.goto(localBase, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(8000)
     await dismissTopLevelBlockingUi(page)
     await item('P1-MULTI-003', 'tokens do not cross', async () => {
-      for (const remote of remotes) await page.locator(`[data-rd-remote-session-id="${remote.sessionId}"]`).click()
+      try {
+        for (const remote of remotes) await page.locator(`[data-rd-remote-session-id="${remote.sessionId}"]`).click()
+      } catch (error) {
+        const diagnostic = await page.evaluate(() => ({
+          frames: [...document.querySelectorAll('iframe')].map(frame => ({ src: frame.src, display: getComputedStyle(frame).display })),
+          remote: window.__dshRemoteDesktop?.getSnapshot?.(),
+        }))
+        diagnostic.frameUrls = page.frames().map(frame => frame.url())
+        throw new Error(`${error.message}; diagnostic=${JSON.stringify(diagnostic)}`)
+      }
       await page.waitForTimeout(3000)
-      const result = await page.evaluate(async ({ wrongToken, targetSession, targetOrigin }) => {
+      const result = await page.evaluate(async ({ wrongToken, targetOrigin }) => {
         const frame = [...document.querySelectorAll('iframe')].find(f => f.src.startsWith(targetOrigin))
         if (!frame?.contentWindow) return { ok: false, reason: 'no target frame' }
         return await new Promise(resolve => {
-          const timer = setTimeout(() => { window.removeEventListener('message', onMessage); resolve({ ok: true, reason: 'no opened ack with wrong token' }) }, 1500)
-          function onMessage(event) {
-            if (event.origin === targetOrigin && event.data?.type === 'dsh-remote-desktop/opened' && event.data.sessionId === targetSession) {
-              clearTimeout(timer)
-              window.removeEventListener('message', onMessage)
-              resolve({ ok: false, reason: 'wrong token opened session' })
-            }
+          const channel = new MessageChannel()
+          const timer = setTimeout(() => { channel.port1.close(); resolve({ ok: true, reason: 'wrong token received no channel response' }) }, 1500)
+          channel.port1.onmessage = () => {
+            clearTimeout(timer)
+            channel.port1.close()
+            resolve({ ok: false, reason: 'wrong token attached a MessageChannel' })
           }
-          window.addEventListener('message', onMessage)
-          frame.contentWindow.postMessage({ type: 'dsh-remote-desktop/open-session', token: wrongToken, sessionId: targetSession }, targetOrigin)
+          channel.port1.start()
+          frame.contentWindow.postMessage({ type: 'dsh-remote-desktop/connect', protocolVersion: 1, sourceToken: wrongToken }, targetOrigin, [channel.port2])
         })
-      }, { wrongToken: remotes[0].token, targetSession: remotes[1].sessionId, targetOrigin: remotes[1].proxyOrigin })
+      }, { wrongToken: remotes[0].token, targetOrigin: remotes[1].proxyOrigin })
       if (!result.ok) throw new Error(result.reason)
       await settingsUiChecks(page)
       return result.reason
@@ -192,14 +206,15 @@ async function recoveryAndSettingsChecks() {
     remotes[0].iframeUrl = source.iframeUrl
     remotes[0].token = source.token
     remotes[0].proxyOrigin = new URL(source.iframeUrl).origin
-    const snapshot = await api(`/snapshot?id=${encodeURIComponent(remotes[0].id)}`)
-    if (!snapshot.snapshot.workspaces.items.some(ws => ws.path === remotes[0].sentinel)) throw new Error('sentinel workspace missing after reconnect')
-    return `${remotes[0].id} reconnected and snapshot restored`
+    await assertIframeAuthenticated(remotes[0])
+    const workspace = await remoteRpc(remotes[0], 'workspace/create', { path: remotes[0].sentinel })
+    if (workspace.workspace.path !== remotes[0].sentinel) throw new Error('sentinel workspace missing after reconnect')
+    return `${remotes[0].id} reconnected and official Gateway state restored`
   })
   await item('P1-RECOVERY-003', 'local remains usable', async () => {
-    const value = await localRpc('session.list', {})
-    if (!Array.isArray(value.items)) throw new Error('local session.list did not return items')
-    return 'local session.list worked while remotes were managed'
+    const value = await localRpc('session/list', {})
+    if (!Array.isArray(value.items)) throw new Error('local session/list did not return items')
+    return 'local session/list worked while remotes were managed'
   })
 }
 
@@ -284,17 +299,17 @@ async function waitForSourceState(id, state) {
 }
 
 async function p2Checks() {
-  await item('P2-SECURITY-001', 'proxy rejects arbitrary upstream', async () => {
+  await item('P2-SECURITY-001', 'removed business routes reject requests', async () => {
     const source = (await api('/sources')).sources[0]
     if ('upstream' in source || 'password' in source || 'privateKey' in source) throw new Error('public source leaked forbidden fields')
-    const res = await fetch(`${localBase}/remote-desktop/api/snapshot?id=not-a-source`)
+    const res = await fetch(`${localBase}/remote-desktop/api/snapshot?id=not-a-source`, { headers: { cookie: localAuthCookie } })
     const json = await res.json()
-    if (json.ok !== false) throw new Error('unknown source snapshot succeeded')
-    return 'unknown source rejected and public source has no upstream/password/privateKey'
+    if (res.status !== 404 || json.ok !== false) throw new Error(`removed snapshot route returned HTTP ${res.status}`)
+    return 'removed snapshot route is 404 and public source has no upstream/password/privateKey'
   })
   await item('P2-SECURITY-002', 'postMessage origin/token audit', async () => {
     const companion = await readFile(join(repoRoot, 'packages/companion/lib/client.js'), 'utf8')
-    for (const needle of ['event.origin !== parent', 'data.token !== token', 'dsh-remote-desktop/open-session', ':has(> [class*="sidebarCol"])']) {
+    for (const needle of ['event.origin !== parent', 'event.source !== window.parent', 'data.sourceToken !== token', 'data.protocolVersion !== BRIDGE_PROTOCOL_VERSION', 'dsh-remote-desktop/connect', ':has(> [class*="sidebarCol"])']) {
       if (!companion.includes(needle)) throw new Error(`missing ${needle}`)
     }
     if (companion.includes('[class*="frame"] { grid-template-columns')) throw new Error('companion still has broad frame rewrite')
@@ -335,6 +350,16 @@ async function startHostProxy() {
 }
 
 async function setupRemote(remote) {
+  const stopContainerListener = containerRemotes ? `
+    listeners=$(ps -eo pid=,args= | awk '$2 ~ /(^|\\/)node$/ && $0 ~ /\\/dsh --profile web/ && $0 ~ /--port ${remote.port}([[:space:]]|$)/ {print $1}')
+    if [ -n "$listeners" ]; then kill $listeners 2>/dev/null || true; fi
+    rm -f /tmp/dsh-remote-desktop-web.pid /tmp/dsh-rd-*.pid /tmp/dsh-remote-desktop-${remote.port}.pid
+    for attempt in 1 2 3 4 5; do
+      if node -e "const s=require('node:net').createServer();s.once('error',()=>process.exit(1));s.listen(${remote.port},'127.0.0.1',()=>s.close(()=>process.exit(0)))"; then break; fi
+      sleep 1
+    done
+    node -e "const s=require('node:net').createServer();s.once('error',()=>process.exit(1));s.listen(${remote.port},'127.0.0.1',()=>s.close(()=>process.exit(0)))" || { echo 'remote DSH port ${remote.port} did not stop' >&2; exit 1; }
+  ` : ''
   await sshRemote(remote, `set -e
     ${remoteProxyExports}
     mkdir -p "$HOME/.npm-global"
@@ -343,7 +368,7 @@ async function setupRemote(remote) {
     rm -rf ${remote.home} ${remote.sentinel}
     mkdir -p ${remote.sentinel}
     printf '${remote.text}\\n' > ${remote.sentinel}/remote-only.txt
-    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.1-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.1.1-rc.2 --force; fi
+    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.2-alpha.4" ]; then npm install -g @deepseek-ai/dsh@0.1.2-alpha.4 --force; fi
     DSH_HOME=${remote.home} dsh --profile web --dump-config >/tmp/dsh-rd-${remote.id}-dump.txt
     cat > ${remote.home}/settings.yaml <<'SETTINGS'
 ${ollamaSettings(remoteOllamaBaseUrl)}SETTINGS
@@ -353,7 +378,7 @@ const fs = require('fs')
 const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-p1-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
-pkg.dependencies['dsh-better-sidebar'] = '^0.12.2'
+pkg.dependencies['dsh-better-sidebar'] = '0.12.2'
 pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
@@ -368,15 +393,24 @@ NODE
       grep -q 'allowBuilds:' pnpm-workspace.yaml 2>/dev/null || printf '\nallowBuilds:\n  node-pty: true\n  protobufjs: true\n' >> pnpm-workspace.yaml
 
     CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true >/tmp/dsh-rd-${remote.id}-install.log 2>&1
+    node - <<'NODE'
+const fs = require('fs')
+const path = 'node_modules/dsh-better-sidebar/lib/index.js'
+let source = fs.readFileSync(path, 'utf8')
+source = source.replace('import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";', 'import { SettingsConflictError } from "@deepseek-ai/dsh-settings";')
+source = source.replace('const ns = settingsNamespace(SIDEBAR_PREFS_NS);', 'const ns = SIDEBAR_PREFS_NS;')
+fs.writeFileSync(path, source)
+NODE
     pnpm rebuild node-pty >/tmp/dsh-rd-${remote.id}-node-pty.log 2>&1 || true
     if [ -f /tmp/dsh-rd-${remote.id}.pid ]; then kill $(cat /tmp/dsh-rd-${remote.id}.pid) 2>/dev/null || true; fi
-    nohup env DSH_HOME=${remote.home} DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remote.port} --trusted-host 127.0.0.1:${remote.port} > /tmp/dsh-rd-${remote.id}.log 2>&1 & echo $! > /tmp/dsh-rd-${remote.id}.pid
-  `, { timeoutMs: 120000 })
+    ${stopContainerListener}
+    nohup env DSH_HOME=${remote.home} DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remote.port} --trusted-host 127.0.0.1:${remote.port} > /tmp/dsh-remote-desktop-${remote.port}.log 2>&1 & echo $! > /tmp/dsh-rd-${remote.id}.pid
+  `, { timeoutMs: 600000 })
   const deadline = Date.now() + 60000
   while (Date.now() < deadline) {
-    try { await remoteRpc(remote, 'host.describe', {}); return } catch { await delay(1000) }
+    try { await remoteCompanionHealth(remote); return } catch { await delay(1000) }
   }
-  throw new Error(`${remote.id} did not boot: ${await sshRemote(remote, `cat /tmp/dsh-rd-${remote.id}.log 2>/dev/null || true`)}`)
+  throw new Error(`${remote.id} did not boot: ${await sshRemote(remote, `cat /tmp/dsh-remote-desktop-${remote.port}.log 2>/dev/null || true`)}`)
 }
 
 async function setupLocal() {
@@ -402,13 +436,14 @@ async function setupLocal() {
   child.stdout.on('data', b => { localLog += String(b) })
   child.stderr.on('data', b => { localLog += String(b) })
   localBase = `http://127.0.0.1:${port}`
+  localAuthCookie = await authenticateLocal(localBase, () => localLog)
   await waitRemoteDesktopApi(60000)
-  const workspace = await localRpc('workspace.create', { path: repoRoot })
-  const session = await localRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
+  const workspace = await localRpc('workspace/create', { path: repoRoot })
+  const session = await localRpc('session/create', { workspaceId: workspace.workspace.workspaceId })
   localSessionId = session.sessionId
-  await assertOllamaDefault(await localRpc('session.models', { sessionId: localSessionId }), 'local')
-  await localRpc('session.prompt', { sessionId: localSessionId, mode: 'queue', content: [{ type: 'text', text: 'Local Remote Desktop acceptance fixture.' }] })
-  await localRpc('session.cancel', { sessionId: localSessionId })
+  await assertOllamaDefault(await localRpc('session/modelCatalog', {}), 'local')
+  await localRpc('session/prompt', { sessionId: localSessionId, mode: 'queue', content: [{ type: 'text', text: 'Local Remote Desktop acceptance fixture.' }] })
+  await localRpc('session/cancel', { sessionId: localSessionId })
 }
 
 async function patchProfilePackage(profile) {
@@ -434,14 +469,33 @@ async function copyCompanion() {
   }
 }
 
-async function remoteRpc(remote, method, payload) {
-  const script = `const method=${JSON.stringify(method)};const payload=${JSON.stringify(payload)};const rpcId=crypto.randomUUID();const res=await fetch('http://127.0.0.1:${remote.port}/api/'+method,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'client-request',rpcId,method,payload})});if(!res.ok)throw new Error('HTTP '+res.status);const json=await res.json();if(!json.result?.ok)throw new Error(json.result?.error?.message||'rpc failed');console.log(JSON.stringify(json.result.value));`
+async function remoteCompanionHealth(remote) {
+  const script = `const res=await fetch('http://127.0.0.1:${remote.port}/remote-desktop-companion/api/health');if(!res.ok)throw new Error('HTTP '+res.status);console.log(await res.text());`
   return JSON.parse(await sshRemote(remote, `node --input-type=module -e ${sh(script)}`))
 }
-async function localRpc(method, payload) { const rpcId=randomUUID(); const res=await fetch(`${localBase}/api/${method}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'client-request',rpcId,method,payload})}); const json=await res.json(); if(!json.result?.ok) throw new Error(json.result?.error?.message||'local rpc failed'); return json.result.value }
+async function assertIframeAuthenticated(remote) {
+  const response = await fetch(remote.iframeUrl, { redirect: 'manual' })
+  if (response.status !== 200) throw new Error(`${remote.id} iframe auth HTTP ${response.status}`)
+}
+async function remoteRpc(remote, method, payload) {
+  const rpcId = randomUUID()
+  const request = method === 'session/prompt' ? { requestId: randomUUID(), ...payload } : payload
+  const args = method === 'session/modelCatalog' ? {} : { request }
+  const res = await fetch(`${remote.proxyOrigin}/api/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } }),
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.result?.ok) throw new Error(json?.result?.error?.message || `${remote.id} ${method} HTTP ${res.status}`)
+  return json.result.value
+}
+
+async function authenticateLocal(base, output) { const d=Date.now()+10000; while(Date.now()<d){const token=/[?&]token=([A-Za-z0-9_-]+)/.exec(output())?.[1]; if(token){const r=await fetch(`${base}/?token=${token}`,{redirect:'manual'});const cookie=r.headers.get('set-cookie')?.split(';',1)[0];if(cookie)return cookie}await delay(100)}throw new Error('local DSH auth token was not printed') }
+async function localRpc(method, payload) { const rpcId=randomUUID(); const request=method==='session/prompt'?{requestId:randomUUID(),...payload}:payload; const args=method==='session/modelCatalog'?{}:method==='session/list'?{_request:request}:{request}; const res=await fetch(`${localBase}/api/${method}`,{method:'POST',headers:{'content-type':'application/json',cookie:localAuthCookie},body:JSON.stringify({type:'client-request',rpcId,method,payload:{args}})}); const json=await res.json(); if(!json.result?.ok) throw new Error(json.result?.error?.message||'local rpc failed'); return json.result.value }
 async function sidebarApi(remote, method, payload) { const res=await fetch(`${remote.proxyOrigin}/sidebar/api/${method}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const json=await res.json(); if(!json.ok) throw new Error(json.error?.message||'sidebar failed'); return json.value }
 async function terminalCommand(remote, input) { const url=`${remote.proxyOrigin.replace('http://','ws://')}/sidebar/ws/terminal?sessionId=${encodeURIComponent(remote.sessionId)}&tab=p1-${Date.now()}&cwd=${encodeURIComponent(remote.sentinel)}`; return await new Promise((resolve,reject)=>{const ws=new WebSocket(url);let data='';const timer=setTimeout(()=>{ws.close();reject(new Error('terminal timeout '+data))},8000);ws.onopen=()=>ws.send(input);ws.onmessage=e=>{data+=String(e.data); if(data.includes(remote.text)){clearTimeout(timer);ws.close();resolve(data)}};ws.onerror=()=>{clearTimeout(timer);reject(new Error('terminal websocket error '+data))}}) }
-async function api(path, init) { const res=await fetch(`${localBase}/remote-desktop/api${path}`,{headers:{'content-type':'application/json'},...init}); const json=await res.json(); if(!res.ok||json.ok!==true) throw new Error(json.error?.message||`HTTP ${res.status}`); return json }
+async function api(path, init) { const res=await fetch(`${localBase}/remote-desktop/api${path}`,{headers:{'content-type':'application/json',cookie:localAuthCookie},...init}); const json=await res.json(); if(!res.ok||json.ok!==true) throw new Error(json.error?.message||`HTTP ${res.status}`); return json }
 async function runHarness(args, env, timeoutMs) {
   return harnessRoot
     ? cmd('pnpm', ['dsh', ...args], { cwd: harnessRoot, env, timeoutMs })
@@ -456,7 +510,7 @@ async function remoteUser() { return (await ssh('whoami')).trim() }
 async function cmd(command,args,options={}) { const r=spawnSync(command,args,{cwd:options.cwd??repoRoot,env:{...process.env,...(options.env??{})},encoding:'utf8',timeout:options.timeoutMs??30000,maxBuffer:1024*1024*20}); if(r.error) throw r.error; if(r.status!==0) throw new Error(`${command} ${args.join(' ')} failed (${r.status})\n${r.stdout}\n${r.stderr}`); return r.stdout }
 async function item(id,name,fn){const start=Date.now();try{const evidence=await fn(); report.push({id,name,status:'PASS',evidence,durationMs:Date.now()-start}); console.log(`PASS ${id} ${name}: ${evidence}`)}catch(e){report.push({id,name,status:'FAIL',evidence:e.message,durationMs:Date.now()-start}); console.error(`FAIL ${id} ${name}: ${e.message}`); throw new Error(`${id}: ${e.message}`)}}
 async function freePort(){const s=createServer();await new Promise((res,rej)=>{s.once('error',rej);s.listen(0,'127.0.0.1',res)});const a=s.address();const p=typeof a==='object'&&a?a.port:undefined;await new Promise(res=>s.close(res));if(!p)throw new Error('no port');return p}
-async function waitRemoteDesktopApi(ms){const d=Date.now()+ms;while(Date.now()<d){try{const r=await fetch(`${localBase}/remote-desktop/api/hosts`);const j=await r.json();if(j.ok===true)return}catch{}await delay(500)}throw new Error('timeout remote desktop api')}
+async function waitRemoteDesktopApi(ms){const d=Date.now()+ms;while(Date.now()<d){try{const r=await fetch(`${localBase}/remote-desktop/api/hosts`,{headers:{cookie:localAuthCookie}});const j=await r.json();if(j.ok===true)return}catch{}await delay(500)}throw new Error('timeout remote desktop api')}
 async function waitHttp(url,ms){const d=Date.now()+ms;while(Date.now()<d){try{const r=await fetch(url);if(r.status<500)return}catch{}await delay(500)}throw new Error('timeout '+url)}
 function delay(ms){return new Promise(r=>setTimeout(r,ms))}
 function sh(v){return `'${String(v).replaceAll("'","'\\''")}'`}

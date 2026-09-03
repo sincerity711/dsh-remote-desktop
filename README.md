@@ -110,8 +110,13 @@ The publishable packages also carry matching npm `keywords`.
 ## Development
 
 ```sh
+npm run build
 npm run check
 ```
+
+Browser client release files under `packages/*/lib/client.js` are generated.
+Edit `packages/local/src/client/` or `packages/companion/src/client.js`; the
+static gate rejects stale generated output.
 
 For local acceptance on macOS, use Apple container:
 

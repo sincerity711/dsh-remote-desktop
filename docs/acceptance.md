@@ -109,7 +109,7 @@ ssh win-wsl 'rm -rf ~/.dsh-remote-desktop-test /tmp/dsh-remote-desktop-sentinel'
 - `packages/local/lib/client.js` provides the light `ctx.remoteDesktop` service with `openLocalSession` and `openRemoteSession`.
 - the source-aware sidebar uses DSH design tokens and the official-style fork marker.
 - legacy inline MVP row/source-header styles are absent from the sidebar implementation.
-- the companion still validates parent origin and token before `open-session`.
+- the companion validates parent origin, parent window identity, and token before accepting a source-scoped `MessageChannel`.
 - the companion still strongly hides the remote iframe's left sidebar without broad `[class*="frame"]` CSS that breaks remote plugins.
 
 ## P0 script
@@ -156,9 +156,9 @@ The script must drive a real browser through Playwright or an equivalent browser
 6. Click the remote session row.
 7. Assert the remote iframe is visible.
 8. Assert the iframe origin differs from the local dsh origin.
-9. Assert the companion returns a `dsh-remote-desktop/opened` message for the clicked session id.
+9. Assert the per-source MessageChannel is ready and its correlated `session/open` request settles.
 10. Assert iframe `body[data-dsh-remote-desktop-child="true"]` exists.
-11. Assert the remote overlay is a fixed body portal over the local main area while official Settings can still appear above it.
+11. Assert the remote overlay occupies the official `shell.overlay` slot over the local main area.
 12. Assert the remote iframe's own left sidebar is hidden while the top-level local sidebar remains visible.
 13. Assert a remote chat/composer or onboarding main area is visible in the iframe.
 14. Assert `dsh-better-sidebar` is mounted inside the iframe.
@@ -214,7 +214,7 @@ A failing run must exit non-zero and include the failing item id in stdout.
 ### BOOT: startup and connection
 
 - **P0-BOOT-001 remote dsh boots**
-  PASS: remote `127.0.0.1:30800` answers `host.describe` through the dsh API.
+  PASS: remote `127.0.0.1:30800` answers the companion health endpoint.
 
 - **P0-BOOT-002 local dsh boots**
   PASS: local dsh page returns 200 and `/remote-desktop/api/sources` returns a success envelope.
@@ -245,7 +245,7 @@ A failing run must exit non-zero and include the failing item id in stdout.
   PASS: clicking the remote session makes the remote iframe visible and places it on the main interaction path.
 
 - **P0-SWITCH-002 remote open command**
-  PASS: the companion emits `dsh-remote-desktop/opened` with the clicked remote session id.
+  PASS: the source-scoped MessageChannel is ready and its correlated `session/open` request settles for the clicked remote session id.
 
 - **P0-SWITCH-003 remote to local**
   PASS: clicking a local session row hides or disables interaction with the remote iframe, and the local main area is visible again.
@@ -259,7 +259,7 @@ A failing run must exit non-zero and include the failing item id in stdout.
   PASS: the remote iframe origin differs from the local dsh origin.
 
 - **P0-IFRAME-005 remote overlay stacking**
-  PASS: the active remote overlay is portalled directly under `document.body`, uses fixed positioning, covers the local main-area viewport probe, and stays below the official Settings modal so Settings remains usable while a remote session is active.
+  PASS: the active remote overlay is mounted through the official `shell.overlay` slot, uses absolute positioning, covers the local main-area probe, and leaves official shell overlays such as Settings in control of stacking.
 
 - **P0-IFRAME-006 companion CSS targets only dsh app frame**
   PASS: companion CSS keeps the hidden `sidebarCol` mounted as a zero-width grid item and rewrites only the DSH app frame that directly contains `sidebarCol`; it must not rewrite every class containing `frame`, because that breaks remote plugins such as Better Sidebar right/bottom panels.

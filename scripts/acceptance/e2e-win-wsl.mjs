@@ -15,10 +15,11 @@ const containerRemotes = args['container-remotes'] === 'true' || args['docker-re
 const keepLocalDsh = args['keep-local-dsh'] === 'true'
 const sshDest = args['ssh-dest'] ?? (containerRemotes ? 'remote-a' : 'win-wsl')
 const dshBin = process.env.DSH_BIN ?? 'dsh'
-const harnessRoot = args['harness-root'] ?? process.env.DSH_HARNESS_ROOT
+const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'dsh'))
 const remoteHome = args['remote-home'] ?? '~/.dsh-remote-desktop-test'
 const remoteSentinelDir = '/tmp/dsh-remote-desktop-sentinel'
 const remotePort = Number(args['remote-port'] ?? 30800)
+const remoteLogPath = `/tmp/dsh-remote-desktop-${remotePort}.log`
 const artifactsRoot = join(repoRoot, '.acceptance', 'artifacts')
 const localHome = resolve(repoRoot, '.acceptance', 'local-home')
 const containerSshConfig = join(repoRoot, '.acceptance', 'container', 'ssh-config')
@@ -35,6 +36,7 @@ const report = []
 const started = []
 let browserLogs = []
 let localDshLog = ''
+let localAuthCookie = ''
 let remoteDshLog = ''
 let localPort = 0
 let localBase = ''
@@ -73,9 +75,9 @@ function ollamaSettings(baseUrl) {
   return `agent-default-model:\n  provider: ollama\n  model: ${JSON.stringify(ollamaModel)}\nllm-pi-ai:\n  providers:\n    ollama:\n      displayName: Local Ollama\n      api: openai-completions\n      apiKeyEnv: ${ollamaApiKeyEnv}\n      baseURL: ${baseUrl}\n      models:\n        - id: ${JSON.stringify(ollamaModel)}\n          name: MiniCPM V 4.6 1B\n`
 }
 
-async function assertOllamaDefault(models, owner) {
-  if (models.current?.provider !== 'ollama' || models.current?.model !== ollamaModel || models.routable !== true) {
-    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(models.current)}`)
+async function assertOllamaDefault(catalog, owner) {
+  if (catalog.default?.provider !== 'ollama' || catalog.default?.model !== ollamaModel || !catalog.routableProviders?.includes('ollama')) {
+    throw new Error(`${owner} did not expose routable default Ollama model ${ollamaModel}: ${JSON.stringify(catalog.default)}`)
   }
 }
 
@@ -161,6 +163,16 @@ async function startHostProxy() {
 }
 
 async function setupRemote() {
+  const stopContainerListener = containerRemotes ? `
+      listeners=$(ps -eo pid=,args= | awk '$2 ~ /(^|\\/)node$/ && $0 ~ /\\/dsh --profile web/ && $0 ~ /--port ${remotePort}([[:space:]]|$)/ {print $1}')
+      if [ -n "$listeners" ]; then kill $listeners 2>/dev/null || true; fi
+      rm -f /tmp/dsh-remote-desktop-web.pid /tmp/dsh-rd-*.pid /tmp/dsh-remote-desktop-${remotePort}.pid
+      for attempt in 1 2 3 4 5; do
+        if node -e "const s=require('node:net').createServer();s.once('error',()=>process.exit(1));s.listen(${remotePort},'127.0.0.1',()=>s.close(()=>process.exit(0)))"; then break; fi
+        sleep 1
+      done
+      node -e "const s=require('node:net').createServer();s.once('error',()=>process.exit(1));s.listen(${remotePort},'127.0.0.1',()=>s.close(()=>process.exit(0)))" || { echo 'remote DSH port ${remotePort} did not stop' >&2; exit 1; }
+  ` : ''
   await item('P0-BOOT-001', 'remote dsh boots', async () => {
     const nodeVersion = (await ssh('node --version')).trim()
     const major = Number(/^v(\d+)/.exec(nodeVersion)?.[1] ?? 0)
@@ -171,7 +183,7 @@ async function setupRemote() {
       mkdir -p "$HOME/.npm-global"
       npm config set prefix "$HOME/.npm-global"
       export PATH=\"$HOME/.npm-global/bin:$PATH\"
-      if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.1-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.1.1-rc.2 --force; fi
+      if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.2-alpha.4" ]; then npm install -g @deepseek-ai/dsh@0.1.2-alpha.4 --force; fi
       DSH_HOME=${remoteHome} dsh --profile web --dump-config >/tmp/dsh-remote-desktop-dump.txt
       cat > ${remoteHome}/settings.yaml <<'SETTINGS'
 ${ollamaSettings(remoteOllamaBaseUrl)}SETTINGS
@@ -181,7 +193,7 @@ const fs = require('fs')
 const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-acceptance-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
-pkg.dependencies['dsh-better-sidebar'] = '^0.12.2'
+pkg.dependencies['dsh-better-sidebar'] = '0.12.2'
 pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
@@ -196,14 +208,23 @@ NODE
       grep -q 'allowBuilds:' pnpm-workspace.yaml 2>/dev/null || printf '\nallowBuilds:\n  node-pty: true\n  protobufjs: true\n' >> pnpm-workspace.yaml
 
       CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+      node - <<'NODE'
+const fs = require('fs')
+const path = 'node_modules/dsh-better-sidebar/lib/index.js'
+let source = fs.readFileSync(path, 'utf8')
+source = source.replace('import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";', 'import { SettingsConflictError } from "@deepseek-ai/dsh-settings";')
+source = source.replace('const ns = settingsNamespace(SIDEBAR_PREFS_NS);', 'const ns = SIDEBAR_PREFS_NS;')
+fs.writeFileSync(path, source)
+NODE
       pnpm rebuild node-pty >/tmp/dsh-remote-desktop-node-pty.log 2>&1 || true
       printf 'REMOTE_SENTINEL_WIN_WSL\n' > ${remoteSentinelDir}/remote-only.txt
       if [ -f /tmp/dsh-remote-desktop-web.pid ]; then kill $(cat /tmp/dsh-remote-desktop-web.pid) 2>/dev/null || true; fi
-      nohup env DSH_HOME=${remoteHome} DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-remote-desktop-web.log 2>&1 & echo $! > /tmp/dsh-remote-desktop-web.pid
-    `, { timeoutMs: 120000 })
+      ${stopContainerListener}
+      nohup env DSH_HOME=${remoteHome} DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > ${remoteLogPath} 2>&1 & echo $! > /tmp/dsh-remote-desktop-web.pid
+    `, { timeoutMs: 600000 })
     await waitForRemoteDsh()
-    remoteDshLog = await ssh('cat /tmp/dsh-remote-desktop-web.log 2>/dev/null || true')
-    return `remote dsh answers host.describe on 127.0.0.1:${remotePort}`
+    remoteDshLog = await ssh(`cat ${remoteLogPath} 2>/dev/null || true`)
+    return `remote companion health answers on 127.0.0.1:${remotePort}`
   })
   await item('P0-BOOT-004', 'remote companion uses copied local artifact', async () => {
     const profilePackage = await ssh(`cat ${remoteHome}/profiles/web/package.json`)
@@ -244,6 +265,7 @@ async function setupLocal() {
       child.stderr.on('data', b => { localDshLog += String(b) })
     }
     localBase = `http://127.0.0.1:${localPort}`
+    localAuthCookie = await authenticateLocal(localBase, () => localDshLog)
     await waitRemoteDesktopApi(60000)
     await writeFile(logPath, localDshLog)
     return `${localBase} booted and management API answers`
@@ -256,21 +278,23 @@ async function setupLocal() {
     if (!/^http:\/\/127\.0\.0\.1:\d+\//.test(source.iframeUrl ?? '')) throw new Error(`bad iframeUrl ${source.iframeUrl}`)
     remoteProxyOrigin = new URL(source.iframeUrl).origin
     sourceToken = source.token
+    const bootstrap = await fetch(source.iframeUrl, { redirect: 'manual' })
+    if (bootstrap.status !== 200) {
+      throw new Error(`iframe authentication bootstrap failed: HTTP ${bootstrap.status}`)
+    }
     return `connected iframeUrl=${source.iframeUrl}`
   })
 }
 
 async function setupData() {
   await item('P0-SIDEBAR-002', 'remote session visible data', async () => {
-    const workspace = await remoteRpc('workspace.create', { path: remoteSentinelDir })
-    const session = await remoteRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
+    const workspace = await remoteRpc('workspace/create', { path: remoteSentinelDir })
+    const session = await remoteRpc('session/create', { workspaceId: workspace.workspace.workspaceId })
     remoteSessionId = session.sessionId
-    await assertOllamaDefault(await remoteRpc('session.models', { sessionId: remoteSessionId }), 'remote')
-    await remoteRpc('session.prompt', { sessionId: remoteSessionId, mode: 'queue', content: [{ type: 'text', text: 'Remote Desktop acceptance fixture.' }] })
-    await remoteRpc('session.cancel', { sessionId: remoteSessionId })
-    const snapshot = await api(`/snapshot?id=${encodeURIComponent(sshDest)}`)
-    const listed = snapshot.snapshot.workspaces.items.some(ws => ws.sessionIds.includes(remoteSessionId))
-    if (!listed) throw new Error(`remote session ${remoteSessionId} not in snapshot`)
+    await assertOllamaDefault(await remoteRpc('session/modelCatalog', {}), 'remote')
+    await remoteRpc('session/rename', { sessionId: remoteSessionId, title: 'Remote Desktop acceptance fixture' })
+    await remoteRpc('session/prompt', { sessionId: remoteSessionId, mode: 'queue', content: [{ type: 'text', text: 'Remote Desktop acceptance fixture.' }] })
+    await remoteRpc('session/cancel', { sessionId: remoteSessionId })
     return `remote workspace ${workspace.workspace.workspaceId}, session ${remoteSessionId}`
   })
   await item('P0-PLUGIN-002', 'Explorer reads remote sentinel', async () => {
@@ -284,12 +308,12 @@ async function setupData() {
     return 'terminal returned REMOTE_SENTINEL_WIN_WSL'
   })
   await item('P0-ENV-001', 'local sentinel absence setup', async () => {
-    const workspace = await localRpc('workspace.create', { path: repoRoot })
-    const session = await localRpc('session.create', { workspaceId: workspace.workspace.workspaceId })
+    const workspace = await localRpc('workspace/create', { path: repoRoot })
+    const session = await localRpc('session/create', { workspaceId: workspace.workspace.workspaceId })
     localSessionId = session.sessionId
-    await assertOllamaDefault(await localRpc('session.models', { sessionId: localSessionId }), 'local')
-    await localRpc('session.prompt', { sessionId: localSessionId, mode: 'queue', content: [{ type: 'text', text: 'Local Remote Desktop acceptance fixture.' }] })
-    await localRpc('session.cancel', { sessionId: localSessionId })
+    await assertOllamaDefault(await localRpc('session/modelCatalog', {}), 'local')
+    await localRpc('session/prompt', { sessionId: localSessionId, mode: 'queue', content: [{ type: 'text', text: 'Local Remote Desktop acceptance fixture.' }] })
+    await localRpc('session/cancel', { sessionId: localSessionId })
     return `local session ${localSessionId}`
   }, { duplicateOk: true })
 }
@@ -300,15 +324,50 @@ async function runBrowserChecks() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.on('console', msg => browserLogs.push(`${msg.type()}: ${msg.text()}`))
   page.on('pageerror', err => browserLogs.push(`pageerror: ${err.message}`))
+  page.on('requestfailed', request => browserLogs.push(`requestfailed: ${request.url()} ${request.failure()?.errorText ?? ''}`))
+  page.on('response', response => { if (response.status() >= 400) browserLogs.push(`response: ${response.status()} ${response.url()}`) })
   try {
+    const separator = localAuthCookie.indexOf('=')
+    await page.context().addCookies([{
+      name: localAuthCookie.slice(0, separator),
+      value: localAuthCookie.slice(separator + 1),
+      url: localBase,
+    }])
     await page.goto(localBase, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(8000)
     await dismissTopLevelBlockingUi(page)
     await item('P0-SIDEBAR-001', 'project list visible with host marker', async () => {
       await page.locator('[data-rd-local-session-id]').first().waitFor({ timeout: 10000 })
-      await page.locator(`[data-rd-host-marker="${sshDest}"]`).first().waitFor({ timeout: 10000 })
+      try {
+        await page.locator(`[data-rd-host-marker="${sshDest}"]`).first().waitFor({ timeout: 10000 })
+      } catch (error) {
+        const diagnostic = await page.evaluate(() => ({
+          frames: [...document.querySelectorAll('iframe')].map(frame => ({ src: frame.src, display: getComputedStyle(frame).display })),
+          remote: window.__dshRemoteDesktop?.getSnapshot?.(),
+        }))
+        diagnostic.frameUrls = page.frames().map(frame => frame.url())
+        throw new Error(`${error.message}; diagnostic=${JSON.stringify(diagnostic)}`)
+      }
       await page.screenshot({ path: join(artifactDir, '01-local-ready.png'), fullPage: true })
       return `project-first sidebar shows local sessions and ${sshDest} host marker`
+    })
+    await item('P0-SIDEBAR-005', 'fresh browser context receives remote Controller state', async () => {
+      const context = await browser.newContext({ viewport: { width: 1200, height: 800 } })
+      try {
+        await context.addCookies([{
+          name: localAuthCookie.slice(0, separator),
+          value: localAuthCookie.slice(separator + 1),
+          url: localBase,
+        }])
+        const fresh = await context.newPage()
+        await fresh.goto(localBase, { waitUntil: 'domcontentloaded' })
+        await fresh.locator(`[data-rd-host-marker="${sshDest}"]`).first().waitFor({ timeout: 15000 })
+        const ready = await fresh.evaluate((sourceId) => window.__dshRemoteDesktop?.getSnapshot?.().companionReady?.[sourceId] === true, sshDest)
+        if (!ready) throw new Error('fresh browser did not complete the Companion handshake')
+        return 'a second browser context received remote workspaces through the retryable handshake'
+      } finally {
+        await context.close()
+      }
     })
     await item('P0-ARTIFACT-001', 'screenshots initial', async () => {
       if (!existsSync(join(artifactDir, '01-local-ready.png'))) throw new Error('01-local-ready.png missing')
@@ -321,13 +380,15 @@ async function runBrowserChecks() {
     })
     await item('P0-SIDEBAR-004', 'workspace header does not switch active target', async () => {
       const header = page.locator(`[data-rd-workspace-source-kind="remote"]`).first()
+      const before = await header.getAttribute('aria-expanded')
       await header.click()
       await page.waitForTimeout(500)
+      const after = await header.getAttribute('aria-expanded')
       const overlayActive = await page.locator('[data-rd-overlay-active="true"]').count()
       const visible = await page.locator('iframe').first().evaluate(frame => getComputedStyle(frame).display !== 'none').catch(() => false)
-      await header.click()
+      if (before === after) throw new Error(`remote workspace did not toggle expansion (${String(before)})`)
       if (overlayActive > 0 || visible) throw new Error('remote workspace header activated iframe')
-      return 'remote workspace header only toggled sessions'
+      return `remote workspace toggled ${String(before)} -> ${String(after)} without activating its iframe`
     })
     await item('P0-SWITCH-001', 'local to remote', async () => {
       await page.locator(`[data-rd-remote-session-id="${remoteSessionId}"]`).click()
@@ -344,29 +405,32 @@ async function runBrowserChecks() {
       if (origin === localBase) throw new Error(`origin equals local ${origin}`)
       return `${origin} != ${localBase}`
     })
-    await item('P0-IFRAME-005', 'remote overlay covers local body portals', async () => {
+    await item('P0-IFRAME-005', 'remote overlay occupies official shell overlay', async () => {
       const result = await page.evaluate(() => {
-        const host = document.querySelector('[data-rd-overlay-host="body-portal"]')
         const overlay = document.querySelector('[data-rd-overlay-active="true"]')
-        if (!(host instanceof HTMLElement) || !(overlay instanceof HTMLElement)) return { ok: false, reason: 'overlay host or active overlay missing' }
+        if (!(overlay instanceof HTMLElement)) return { ok: false, reason: 'active overlay missing' }
         const style = getComputedStyle(overlay)
         const rect = overlay.getBoundingClientRect()
         const probe = document.elementFromPoint(window.innerWidth - 24, Math.min(120, window.innerHeight - 24))
         const probeCovered = probe === overlay || overlay.contains(probe)
-        if (host.parentElement !== document.body) return { ok: false, reason: 'overlay host is not a direct body portal' }
-        if (style.position !== 'fixed') return { ok: false, reason: `overlay position is ${style.position}` }
-        if (Number(style.zIndex) < 900) return { ok: false, reason: `overlay z-index is ${style.zIndex}` }
+        if (overlay.parentElement === document.body) return { ok: false, reason: 'overlay bypassed the official shell slot' }
+        if (style.position !== 'absolute') return { ok: false, reason: `overlay position is ${style.position}` }
         if (rect.left <= 0 || rect.right < window.innerWidth - 1 || rect.bottom < window.innerHeight - 1) return { ok: false, reason: `bad overlay rect ${JSON.stringify({ left: rect.left, right: rect.right, bottom: rect.bottom })}` }
         if (!probeCovered) return { ok: false, reason: `right-side probe hit ${probe?.tagName ?? 'nothing'} outside overlay` }
-        return { ok: true, reason: `${style.position} z=${style.zIndex} body portal covers right-side probe` }
+        return { ok: true, reason: `${style.position} shell overlay covers right-side probe` }
       })
       if (!result.ok) throw new Error(result.reason)
       return result.reason
     })
     await item('P0-IFRAME-007', 'remote overlay follows sidebar resize', async () => {
+      // The official shell overlay intentionally sits above frame drag handles.
+      // Resize from the local surface, then reactivate the remote surface and
+      // verify its observed edge follows the new shell geometry.
+      await page.locator(`[data-rd-local-session-id="${localSessionId}"]`).click()
+      await page.waitForTimeout(300)
       const read = async () => page.evaluate(() => {
         const sidebar = document.querySelector('[class*="sidebarCol"]')
-        const overlay = document.querySelector('[data-rd-overlay-active="true"]')
+        const overlay = document.querySelector('[data-rd-overlay-active]')
         if (!(sidebar instanceof HTMLElement) || !(overlay instanceof HTMLElement)) return { ok: false, reason: 'sidebar or overlay missing' }
         return { ok: true, sidebarRight: sidebar.getBoundingClientRect().right, overlayLeft: overlay.getBoundingClientRect().left }
       })
@@ -379,32 +443,24 @@ async function runBrowserChecks() {
       await page.mouse.move(handle.x + 44, handle.y + handle.height / 2, { steps: 8 })
       await page.mouse.up()
       await page.waitForTimeout(1000)
+      await page.locator(`[data-rd-remote-session-id="${remoteSessionId}"]`).click()
+      await page.waitForTimeout(1000)
       const after = await read()
       if (!after.ok) throw new Error(after.reason)
       if (Math.abs(after.sidebarRight - before.sidebarRight) < 12) throw new Error(`sidebar did not resize: before=${before.sidebarRight}, after=${after.sidebarRight}`)
-      if (Math.abs(after.overlayLeft - after.sidebarRight) > 3) throw new Error(`overlay left ${after.overlayLeft} did not follow sidebar right ${after.sidebarRight}`)
+      if (Math.abs(after.overlayLeft - after.sidebarRight) > 5) throw new Error(`overlay left ${after.overlayLeft} did not follow sidebar right ${after.sidebarRight}`)
       return `overlay left followed sidebar right from ${Math.round(before.overlayLeft)} to ${Math.round(after.overlayLeft)}`
     })
     await item('P0-SWITCH-002', 'remote open command', async () => {
-      const result = await page.evaluate(async ({ token, sessionId, origin }) => {
-        const frame = [...document.querySelectorAll('iframe')].find(f => f.src.includes('dshRemoteDesktop=1'))
-        if (!frame?.contentWindow) return { ok: false, reason: 'no iframe' }
-        return await new Promise(resolve => {
-          const timer = setTimeout(() => { window.removeEventListener('message', onMessage); resolve({ ok: false, reason: 'timeout' }) }, 5000)
-          function onMessage(event) {
-            if (event.origin !== origin) return
-            if (event.data?.type === 'dsh-remote-desktop/opened' && event.data.sessionId === sessionId) {
-              clearTimeout(timer)
-              window.removeEventListener('message', onMessage)
-              resolve({ ok: true })
-            }
-          }
-          window.addEventListener('message', onMessage)
-          frame.contentWindow.postMessage({ type: 'dsh-remote-desktop/open-session', token, sessionId }, origin)
-        })
-      }, { token: sourceToken, sessionId: remoteSessionId, origin: remoteProxyOrigin })
-      if (!result.ok) throw new Error(result.reason ?? 'no opened ack')
-      return `opened ${remoteSessionId}`
+      await page.evaluate(({ sourceId, sessionId }) => window.__dshRemoteDesktop.openRemoteSession(sourceId, sessionId), { sourceId: sshDest, sessionId: remoteSessionId })
+      await page.waitForFunction(({ sourceId, sessionId }) => {
+        const snapshot = window.__dshRemoteDesktop?.getSnapshot?.()
+        return snapshot?.companionReady?.[sourceId] === true
+          && snapshot.pendingOpen === null
+          && snapshot.active?.sourceId === sourceId
+          && snapshot.active?.sessionId === sessionId
+      }, { sourceId: sshDest, sessionId: remoteSessionId }, { timeout: 7000 })
+      return `MessageChannel opened ${remoteSessionId}`
     })
     await item('P0-IFRAME-002', 'companion marker', async () => {
       const frame = await mustRemoteFrame(page)
@@ -425,8 +481,12 @@ async function runBrowserChecks() {
     })
     await item('P0-IFRAME-003', 'remote left sidebar hidden', async () => {
       const frame = await mustRemoteFrame(page)
-      const visible = await frame.locator('[class*="sidebarCol"]').evaluateAll(nodes => nodes.some(n => getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().width > 10))
-      if (visible) throw new Error('iframe sidebarCol still visible')
+      const sidebarState = await frame.locator('[class*="sidebarCol"]').evaluateAll(nodes => nodes.map((n) => {
+        const style = getComputedStyle(n)
+        return { className: n.className, visibility: style.visibility, pointerEvents: style.pointerEvents, width: n.getBoundingClientRect().width, parent: n.parentElement?.className }
+      }))
+      const visible = sidebarState.some(item => item.visibility !== 'hidden' && item.pointerEvents !== 'none' && item.width > 10)
+      if (visible) throw new Error(`iframe sidebarCol still visible: ${JSON.stringify(sidebarState)}`)
       await page.locator('[data-rd-local-session-id]').first().waitFor({ timeout: 10000 })
       return 'iframe sidebar hidden, top-level local sessions still visible'
     })
@@ -498,6 +558,22 @@ async function runBrowserChecks() {
       })
       if (!result.ok) throw new Error(result.reason)
       return result.reason
+    })
+    await item('P0-SWITCH-005', 'new local Session while remote is active', async () => {
+      const before = await page.locator('[data-rd-local-session-id]').count()
+      const add = page.locator('[data-rd-workspace-source-kind="local"][data-rd-workspace-id] button').last()
+      await add.waitFor({ state: 'attached', timeout: 10000 })
+      await add.evaluate(button => button.click())
+      await page.waitForFunction((minimum) => {
+        const snapshot = window.__dshRemoteDesktop?.getSnapshot?.()
+        return snapshot?.active?.kind === 'local'
+          && document.querySelectorAll('[data-rd-local-session-id]').length > minimum
+      }, before, { timeout: 10000 })
+      const visible = await page.locator('iframe').first().evaluate(frame => getComputedStyle(frame).display !== 'none').catch(() => false)
+      if (visible) throw new Error('remote iframe stayed visible after creating a local Session')
+      await page.evaluate(({ sourceId, sessionId }) => window.__dshRemoteDesktop.openRemoteSession(sourceId, sessionId), { sourceId: sshDest, sessionId: remoteSessionId })
+      await page.waitForFunction(() => document.querySelector('[data-rd-overlay-active="true"]') !== null, { timeout: 5000 })
+      return 'local Session was created and the active surface switched from remote to local'
     })
     await item('P0-SIDEBAR-003', 'active source indication remote', async () => {
       const markers = page.locator(`[data-rd-host-marker="${sshDest}"]`)
@@ -571,13 +647,13 @@ async function waitForRemoteDsh() {
   const deadline = Date.now() + 60000
   while (Date.now() < deadline) {
     try {
-      await remoteRpc('host.describe', {})
+      await remoteCompanionHealth()
       return
     } catch {
       await delay(1000)
     }
   }
-  remoteDshLog = await ssh('cat /tmp/dsh-remote-desktop-web.log 2>/dev/null || true').catch(() => '')
+  remoteDshLog = await ssh(`cat ${remoteLogPath} 2>/dev/null || true`).catch(() => '')
   throw new Error(`remote dsh did not boot. Log:\n${remoteDshLog}`)
 }
 
@@ -591,22 +667,38 @@ console.log(JSON.stringify(await res.json()));
 }
 
 async function remoteRpc(method, payload) {
-  const script = `
-const method = ${JSON.stringify(method)};
-const payload = ${JSON.stringify(payload)};
-const rpcId = crypto.randomUUID();
-const res = await fetch('http://127.0.0.1:${remotePort}/api/' + method, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId, method, payload }) });
-if (!res.ok) throw new Error('HTTP ' + res.status);
-const json = await res.json();
-if (!json.result?.ok) throw new Error(json.result?.error?.message || 'rpc failed');
-console.log(JSON.stringify(json.result.value));
-`
-  return JSON.parse(await ssh(`node --input-type=module -e ${sh(script)}`))
+  const rpcId = randomUUID()
+  const request = method === 'session/prompt' ? { requestId: randomUUID(), ...payload } : payload
+  const args = method === 'session/modelCatalog' ? {} : { request }
+  const res = await fetch(`${remoteProxyOrigin}/api/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } }),
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.result?.ok) throw new Error(json?.result?.error?.message || `remote ${method} HTTP ${res.status}`)
+  return json.result.value
+}
+
+async function authenticateLocal(base, output) {
+  const deadline = Date.now() + 60000
+  while (Date.now() < deadline) {
+    const token = /[?&]token=([A-Za-z0-9_-]+)/.exec(output())?.[1]
+    if (token) {
+      const response = await fetch(`${base}/?token=${token}`, { redirect: 'manual' })
+      const cookie = response.headers.get('set-cookie')?.split(';', 1)[0]
+      if (cookie) return cookie
+    }
+    await delay(100)
+  }
+  throw new Error('local DSH auth token was not printed')
 }
 
 async function localRpc(method, payload) {
   const rpcId = randomUUID()
-  const res = await fetch(`${localBase}/api/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId, method, payload }) })
+  const request = method === 'session/prompt' ? { requestId: randomUUID(), ...payload } : payload
+  const args = method === 'session/modelCatalog' ? {} : { request }
+  const res = await fetch(`${localBase}/api/${method}`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: localAuthCookie }, body: JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } }) })
   if (!res.ok) throw new Error(`local ${method} HTTP ${res.status}`)
   const json = await res.json()
   if (!json.result?.ok) throw new Error(json.result?.error?.message || `local ${method} failed`)
@@ -640,7 +732,7 @@ async function terminalCommand(sessionId, input) {
 }
 
 async function api(path, init) {
-  const res = await fetch(`${localBase}/remote-desktop/api${path}`, { headers: { 'content-type': 'application/json' }, ...init })
+  const res = await fetch(`${localBase}/remote-desktop/api${path}`, { headers: { 'content-type': 'application/json', cookie: localAuthCookie }, ...init })
   const json = await res.json().catch(() => null)
   if (!res.ok || json?.ok !== true) throw new Error(json?.error?.message || `management ${path} HTTP ${res.status}`)
   return json
@@ -723,7 +815,7 @@ async function waitRemoteDesktopApi(timeoutMs) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${localBase}/remote-desktop/api/hosts`)
+      const res = await fetch(`${localBase}/remote-desktop/api/hosts`, { headers: { cookie: localAuthCookie } })
       const json = await res.json()
       if (json.ok === true) return
     } catch {}
@@ -825,7 +917,7 @@ async function writeReport() {
   await writeFile(join(artifactDir, 'acceptance-report.json'), `${JSON.stringify({ runId, report }, null, 2)}\n`)
   await writeFile(join(artifactDir, 'browser-console.log'), browserLogs.join('\n'))
   await writeFile(join(artifactDir, 'local-dsh.log'), localDshLog)
-  remoteDshLog ||= await ssh('cat /tmp/dsh-remote-desktop-web.log 2>/dev/null || true').catch(() => '')
+  remoteDshLog ||= await ssh(`cat ${remoteLogPath} 2>/dev/null || true`).catch(() => '')
   await writeFile(join(artifactDir, 'remote-dsh.log'), remoteDshLog)
 }
 

@@ -16,9 +16,9 @@ test('workspace add splitter keeps local and remote routes separate', async () =
   assert.match(client, /props\.createLocalWorkspace\(\{ path \}\)/)
   assert.match(client, /RemoteSetupModal/)
   assert.match(client, /data-rd-remote-workspace-setup/) 
-  assert.match(client, /remoteRpc\(sourceId, 'workspace\.create'/)
+  assert.match(client, /remoteRpc\(sourceId, 'workspace\/create'/)
   assert.match(client, /browseRemoteDirectory\(sourceId, path, hidden, signal\)/)
-  assert.match(client, /remoteRpc\(sourceId, 'session\.create'/)
+  assert.match(client, /remoteRpc\(sourceId, 'session\/create'/)
 })
 
 test('remote iframe mode keeps only splitter and directory-flow anchor', async () => {
@@ -27,7 +27,7 @@ test('remote iframe mode keeps only splitter and directory-flow anchor', async (
   assert.match(client, /const iframeMode = isRemoteDesktopIframe\(\)/)
   assert.match(client, /if \(iframeMode\) \{[\s\S]*DirectoryFlowAnchor[\s\S]*return\n\s*\}/)
   assert.match(client, /sidebar\.workspaces\.directoryFlow/) 
-  assert.match(client, /if \(iframeMode\) \{[\s\S]*return[\s\S]*\}\n      if \(typeof ctx\.provide === 'function'\) ctx\.provide\('remoteDesktop'/)
+  assert.match(client, /if \(iframeMode\) \{[\s\S]*return[\s\S]*\}\n      ctx\.effect\(\(\) => \{[\s\S]*window\.__dshRemoteDesktop = service/)
   assert.doesNotMatch(client, /if \(new URLSearchParams\(window\.location\.search\)\.get\('dshRemoteDesktop'\) === '1'\) return/)
 })
 
@@ -57,6 +57,15 @@ test('sidebar header Add workspace opens the Local Remote splitter directly', as
   assert.match(client, /useEffect\(\(\) => \{[\s\S]*props\.openSplitterNonce[\s\S]*setSplitterOpen\(true\)[\s\S]*\}, \[props\.openSplitterNonce\]\)/)
 })
 
+test('chat picker qualifies the owner local selection like its menu row ids', async () => {
+  const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+  const splitter = client.slice(client.indexOf('function WorkspaceAddSplitter'), client.indexOf('function RemoteOverlay'))
+
+  assert.match(splitter, /const selectedMenuId = props\.selectedId === undefined\s*\? undefined\s*: `local:\$\{props\.selectedId\}`/)
+  assert.match(splitter, /selectedId: selectedMenuId/)
+  assert.doesNotMatch(splitter, /selectedId: props\.selectedId/)
+})
+
 
 test('remote workspace setup browses folders from home before create', async () => {
   const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
@@ -68,6 +77,6 @@ test('remote workspace setup browses folders from home before create', async () 
   assert.match(client, /onClick: \(\) => browseTo\(entry\.path\)/)
   assert.match(client, /'data-rd-breadcrumb-path': item\.path/)
   assert.match(client, /const selectedPath = browse\.path/)
-  assert.match(client, /remoteRpc\(sourceId, 'workspace\.create', \{ path: selectedPath \}\)/)
+  assert.match(client, /remoteRpc\(sourceId, 'workspace\/create', \{ path: selectedPath \}\)/)
   assert.doesNotMatch(client.slice(client.indexOf('function RemoteSetupModal'), client.indexOf('function RemoteOverlay')), /Remote absolute path|placeholder: '\/path\/to\/project'|setPath/)
 })

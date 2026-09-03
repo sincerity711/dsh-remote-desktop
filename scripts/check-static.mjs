@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises'
 
 const localClient = await readFile('packages/local/lib/client.js', 'utf8')
 const companionClient = await readFile('packages/companion/lib/client.js', 'utf8')
+const companionHost = await readFile('packages/companion/lib/index.js', 'utf8')
+const localHost = await readFile('packages/local/lib/index.js', 'utf8')
 const localPatch = await readFile('packages/local/cordis.patch.yml', 'utf8')
 const upstreamRecord = await readFile('packages/local/upstream/ui-workspace/UPSTREAM.md', 'utf8')
 const upstreamPatch = await readFile('packages/local/upstream/ui-workspace/remote-desktop.patch', 'utf8')
@@ -12,19 +14,20 @@ const containerDockerfile = await readFile('scripts/acceptance/container/Dockerf
 const containerEntrypoint = await readFile('scripts/acceptance/container/entrypoint.sh', 'utf8')
 
 const requiredClientNeedles = [
-  'ctx.provide(\'remoteDesktop\'',
+  'window.__dshRemoteDesktop',
+  'OfficialWorkspace.UiWorkspaceService',
+  'ctx.slots.provideRoot',
+  'const hostInfo =',
   'openRemoteSession',
   'openLocalSession',
   'const OfficialWorkspace = (() =>',
-  '141eb6fef83422698aef7a981029e843e8161534',
+  '4e84901e6471b79ec0338099867ebb4606d12bb5',
   'OfficialWorkspaceForkBrowser',
   'data-rd-host-marker',
   'var(--dsw-specific-sidebar-fill)',
   'var(--dsw-alias-interactive-bg-hover)',
-  "position: 'fixed'",
-  'const REMOTE_OVERLAY_Z_INDEX = 900',
-  'ReactDOM.createPortal',
-  'data-rd-overlay-host',
+  "position: 'absolute'",
+  "ctx.slots.inject('shell.overlay'",
   'data-rd-local-session-id',
   'data-rd-remote-session-id',
   'data-rd-workspace-source-kind',
@@ -33,7 +36,10 @@ const requiredClientNeedles = [
   'data-rd-settings-native-link',
   'nativeRemoteUrl',
   "window.open(nativeUrl, '_blank', 'noopener,noreferrer')",
-  '/remote-desktop/api/host-api',
+  'new MessageChannel()',
+  'dsh-remote-desktop/state-baseline',
+  'BRIDGE_PROTOCOL_VERSION = 1',
+  "new EventSource('/remote-desktop/api/events')",
   'WorkspaceAddSplitter',
   'data-rd-add-workspace-splitter',
   'data-rd-remote-workspace-setup',
@@ -46,7 +52,7 @@ for (const needle of requiredClientNeedles) {
 }
 
 
-const upstreamHash = '141eb6fef83422698aef7a981029e843e8161534'
+const upstreamHash = '4e84901e6471b79ec0338099867ebb4606d12bb5'
 if (!upstreamRecord.includes(upstreamHash)) throw new Error('ui-workspace upstream record missing pinned hash')
 if (!upstreamPatch.includes('remote host marker')) throw new Error('ui-workspace remote patch summary missing marker delta')
 if (/ui-settings-general[\s\S]*disabled: true/.test(localPatch)) throw new Error('ui-settings-general should remain enabled; extend official settings slots instead')
@@ -88,8 +94,8 @@ const requiredSplitterNeedles = [
   'browseRemoteDirectory',
   'h(Menu',
   'props.createLocalWorkspace({ path })',
-  "remoteRpc(sourceId, 'workspace.create'",
-  "remoteRpc(sourceId, 'session.create'",
+  "remoteRpc(sourceId, 'workspace/create'",
+  "remoteRpc(sourceId, 'session/create'",
   'isRemoteDesktopIframe()',
 ]
 for (const needle of requiredSplitterNeedles) {
@@ -129,16 +135,37 @@ for (const needle of forbiddenSidebarInline) {
 
 const requiredCompanionNeedles = [
   'event.origin !== parent',
-  'data.token !== token',
-  'dsh-remote-desktop/open-session',
-  '[class*="sidebarCol"] { visibility: hidden !important; pointer-events: none !important; overflow: hidden !important; }',
+  'event.source !== window.parent',
+  'data.sourceToken !== token',
+  'data.protocolVersion !== BRIDGE_PROTOCOL_VERSION',
+  'dsh-remote-desktop/connect',
+  'dsh-remote-desktop/request',
+  'dsh-remote-desktop/state-baseline',
+  'BRIDGE_CAPABILITIES',
+  '#root [class*="frame"]:has(> [class*="sidebarCol"]) > [class*="sidebarCol"] { visibility: hidden !important; pointer-events: none !important; overflow: hidden !important; }',
   ':has(> [class*="sidebarCol"])',
 ]
 for (const needle of requiredCompanionNeedles) {
   if (!companionClient.includes(needle)) throw new Error(`packages/companion/lib/client.js missing ${needle}`)
 }
-if (companionClient.includes('[class*="frame"] { grid-template-columns')) {
+if (companionClient.includes('[class*="frame"] { grid-template-columns') || companionClient.includes('[class*="frame"] {')) {
   throw new Error('companion must not rewrite every class containing frame; it breaks remote plugins')
+}
+
+for (const needle of ['REMOTE_COMPANION_SNAPSHOT_PATH', 'REMOTE_COMPANION_RPC_PATH', '/remote-desktop-companion/api/snapshot', '/remote-desktop-companion/api/rpc', '/remote-desktop/api/host-api', 'DSH_REMOTE_DESKTOP_COMPANION_TOKEN']) {
+  if (localHost.includes(needle) || companionHost.includes(needle)) throw new Error(`obsolete Companion Host business API remains: ${needle}`)
+}
+for (const needle of ["inject = ['webServer', 'connection']", 'requestRejection(req)']) {
+  if (!localHost.includes(needle)) throw new Error(`authenticated local management boundary missing ${needle}`)
+}
+if (!companionHost.includes('/remote-desktop-companion/api/health')) throw new Error('transitional Companion readiness route missing')
+if (localClient.includes('snapshot/get') || companionClient.includes('snapshot/get')) throw new Error('snapshot request fallback remains in Client Bridge')
+if (localClient.includes('setInterval(() => { void store.refreshSources() }, 5000)')) throw new Error('remote source snapshot polling remains')
+for (const needle of ['ReactDOM.createPortal', "document.addEventListener('pointermove', measure", 'window.setInterval(measure, 250)']) {
+  if (localClient.includes(needle)) throw new Error(`legacy overlay polling/portal remains: ${needle}`)
+}
+for (const source of [localClient, companionClient]) {
+  if (source.includes('@deepseek-ai/dsh-client-runtime')) throw new Error('removed dsh-client-runtime dependency remains')
 }
 
 if (!localPatch.includes('- id: ui-workspace\n  disabled: true')) {

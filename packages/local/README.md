@@ -16,6 +16,11 @@ Before npm publication, install from a local checkout:
 dsh plugin --profile web add /path/to/dsh-remote-desktop/packages/local
 ```
 
+## Development
+
+Edit the numbered source parts in `src/client/`, then run `npm run build` from
+the repository root. `lib/client.js` is generated and checked for drift.
+
 Remote hosts that already have `dsh` and `dsh-remote-desktop-companion` installed in the web profile connect automatically. The Settings Connect action runs `dsh plugin --profile web add dsh-remote-desktop-companion` over SSH, starts the remote web profile on the configured loopback port when needed, then connects.
 
 ## Architecture
