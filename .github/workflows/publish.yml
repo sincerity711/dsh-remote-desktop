@@ -1,6 +1,12 @@
 name: Publish npm packages
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example v0.2.2
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
@@ -23,11 +29,14 @@ jobs:
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@12.2.0
       - name: Check release versions
+        env:
+          RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
         run: |
           node --input-type=module <<'JS'
           import { readFileSync } from 'node:fs'
-          const version = process.env.GITHUB_REF_NAME.slice(1)
+          const version = process.env.RELEASE_VERSION.replace(/^v/, '')
           for (const dir of ['local', 'companion']) {
             const pkg = JSON.parse(readFileSync(`packages/${dir}/package.json`, 'utf8'))
             if (pkg.version !== version) throw new Error(`${pkg.name}: ${pkg.version} does not match tag ${version}`)
@@ -39,7 +48,7 @@ jobs:
         run: |
           npm pack --workspace packages/local --dry-run
           npm pack --workspace packages/companion --dry-run
-      - name: Publish with npm Trusted Publishing
+      - name: Stage with npm Trusted Publishing
         run: |
           for package in companion local; do
             (
@@ -49,7 +58,7 @@ jobs:
               if npm view "$name@$version" version --json > "$RUNNER_TEMP/npm-view.json" 2> "$RUNNER_TEMP/npm-view.err"; then
                 echo "$name@$version already published; skipping"
               elif node -e 'const fs = require("fs"); const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.exit(result.error?.code === "E404" ? 0 : 1)' "$RUNNER_TEMP/npm-view.json"; then
-                npm publish --access public --provenance
+                npm stage publish --access public --provenance
               else
                 cat "$RUNNER_TEMP/npm-view.err"
                 exit 1
