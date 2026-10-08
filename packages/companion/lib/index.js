@@ -1,4 +1,4 @@
-export const name = 'dsh-remote-desktop-companion'
+export const name = 'dsh-ssh-workspace-companion'
 export const inject = ['webServer']
 
 const HEALTH_PATH = '/remote-desktop-companion/api/health'

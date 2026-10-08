@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-workspace-companion",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Remote companion for dsh-remote-desktop iframe control.",
   "type": "module",
   "main": "lib/index.js",

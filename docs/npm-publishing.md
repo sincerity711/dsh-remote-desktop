@@ -38,7 +38,7 @@ A tag workflow publishes code from the tagged commit. Standard GitHub-hosted run
 
 ## Existing local installations
 
-The npm package names are new; internal plugin IDs, iframe protocol and isolated test homes retain their existing names. Remove the old locally installed bundle from the relevant DSH profile before adding the renamed package, so both bundles do not load together. Restart DSH after replacing packages.
+The npm package names are new; host/client module IDs match the new package names; iframe protocol and isolated test homes retain their existing names. Remove the old locally installed bundle from the relevant DSH profile before adding the renamed package, so both bundles do not load together. Restart DSH after replacing packages.
 
 ## Direct and staged permissions
 

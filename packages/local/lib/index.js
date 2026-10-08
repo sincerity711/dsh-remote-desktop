@@ -10,7 +10,7 @@ export const DEFAULT_REMOTE_DSH_PORT = 30800
 export const REMOTE_COMPANION_PACKAGE = 'dsh-ssh-workspace-companion'
 export const REMOTE_COMPANION_HEALTH_PATH = '/remote-desktop-companion/api/health'
 
-export const name = 'dsh-remote-desktop'
+export const name = 'dsh-ssh-workspace'
 export const inject = ['webServer', 'connection']
 
 const API_PREFIX = '/remote-desktop/api'
