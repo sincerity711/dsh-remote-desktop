@@ -337,7 +337,7 @@ window.__ModuleLoader__.load({
             sessionOrderByAccount: {},
             sessionUpdatedAtByAccount: {}
           }),
-          persist: "dsh.workspace.view.v5",
+          persist: "dsh.ssh-workspace.view.v1",
           actions: {
             pinSessionOrder: (d, sessionId, accountKeys) => {
               for (const key of accountKeys) {
