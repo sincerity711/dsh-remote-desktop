@@ -49,6 +49,10 @@ The companion validates the parent origin and connection token inside the remote
 
 Edit `packages/companion/src/client.js`, then run `npm run build` and `npm run check` from the repository root.
 
+### AI-assisted remote installation
+
+Use the [check/install/verify guide](https://github.com/sincerity711/dsh-ssh-workspace/blob/main/docs/ai-remote-setup.md) with your terminal-capable AI assistant. It includes a ready-to-copy prompt and pins remote DSH to your actual local runtime version and companion to your installed local plugin version. A reusable `setup-remote` skill is included in the repository.
+
 ## 简体中文
 
 [dsh-ssh-workspace](https://www.npmjs.com/package/dsh-ssh-workspace) 的远程配套插件。安装在每台远程机器的 DeepSeek Harness（DSH）Web profile 中，让本地插件可以打开和操作该机器的工作区与会话。
@@ -95,3 +99,7 @@ companion 在本地插件打开的远程 iframe 中验证父页面来源和连�
 - [问题反馈](https://github.com/sincerity711/dsh-ssh-workspace/issues)
 
 开发时修改 `packages/companion/src/client.js`，再在仓库根目录执行 `npm run build` 和 `npm run check`。
+
+### AI 辅助远程安装
+
+把 [检查安装流程](https://github.com/sincerity711/dsh-ssh-workspace/blob/main/docs/ai-remote-setup.md) 中的提示词交给能操作终端的 AI，即可按本机实际 DSH 和插件版本准备远程机器、检查 profile 并验证连接。仓库也提供可安装的 `setup-remote` skill。

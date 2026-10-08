@@ -1,5 +1,7 @@
 # Remote server setup
 
+For version-pinned AI-assisted setup, follow [the check/install/verify procedure](ai-remote-setup.md).
+
 The local controller auto-connects SSH hosts whose remote web profile already has `dsh` and `dsh-ssh-workspace-companion` installed and reachable from that machine's loopback interface. The Settings Connect action installs the companion over SSH, starts the remote web profile on the configured loopback port when needed, then connects.
 
 Example remote command:

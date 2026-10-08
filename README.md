@@ -65,6 +65,10 @@ dsh plugin --profile web add /path/to/dsh-ssh-workspace/packages/companion
 
 From a DeepSeek Harness source checkout, replace `dsh` with the checkout wrapper, for example `pnpm dsh`.
 
+## AI-assisted remote installation
+
+Give your terminal-capable AI assistant the ready-to-copy prompt in [the check/install/verify guide](docs/ai-remote-setup.md). It verifies the actual local DSH runtime and plugin versions before installing matching versions remotely. The repository also includes [a reusable setup-remote skill](skills/setup-remote/SKILL.md).
+
 ## Remote host setup
 
 1. Start DSH Web on the remote machine, bound to remote loopback.

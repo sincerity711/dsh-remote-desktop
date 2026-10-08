@@ -70,6 +70,10 @@ The explicit Connect action attempts to install the companion over SSH and start
 
 Edit `packages/local/src/client/`, then run `npm run build` and `npm run check` from the repository root. Published packages include generated `lib/` files.
 
+### AI-assisted remote installation
+
+Use the [check/install/verify guide](https://github.com/sincerity711/dsh-ssh-workspace/blob/main/docs/ai-remote-setup.md) with your terminal-capable AI assistant. It includes a ready-to-copy prompt and pins remote DSH to your actual local runtime version and companion to your installed local plugin version. A reusable `setup-remote` skill is included in the repository.
+
 ## 简体中文
 
 在一个本地 DeepSeek Harness（DSH）Web 页面中，通过 SSH 使用远程机器的工作区和会话。
@@ -139,3 +143,7 @@ dsh plugin --profile web add dsh-ssh-workspace-companion
 - [问题反馈](https://github.com/sincerity711/dsh-ssh-workspace/issues)
 
 开发时修改仓库中的 `packages/local/src/client/`，再在仓库根目录执行 `npm run build` 和 `npm run check`。发布包包含生成后的 `lib/` 文件。
+
+### AI 辅助远程安装
+
+把 [检查安装流程](https://github.com/sincerity711/dsh-ssh-workspace/blob/main/docs/ai-remote-setup.md) 中的提示词交给能操作终端的 AI，即可按本机实际 DSH 和插件版本准备远程机器、检查 profile 并验证连接。仓库也提供可安装的 `setup-remote` skill。
