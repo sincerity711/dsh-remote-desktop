@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { terminalThroughBrowser } from './terminal-controller.mjs'
 import { createRequire } from 'node:module'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -14,7 +15,8 @@ const args = parseArgs(process.argv.slice(2))
 const containerRemotes = args['container-remotes'] === 'true' || args['docker-remotes'] === 'true'
 const sshDest = args['ssh-dest'] ?? (containerRemotes ? 'remote-a' : 'win-wsl')
 const dshBin = process.env.DSH_BIN ?? 'dsh'
-const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'dsh'))
+const sourceRoot = args['harness-root'] ?? process.env.DSH_HARNESS_ROOT
+const harnessRoot = sourceRoot ? resolve(sourceRoot) : undefined
 const localHome = resolve(repoRoot, '.acceptance', 'p1-local-home')
 const containerSshConfig = join(repoRoot, '.acceptance', 'container', 'ssh-config')
 const localSshConfig = containerRemotes ? containerSshConfig : join(localHome, 'ssh-config')
@@ -156,7 +158,11 @@ async function browserMultiChecks() {
     await dismissTopLevelBlockingUi(page)
     await item('P1-MULTI-003', 'tokens do not cross', async () => {
       try {
-        for (const remote of remotes) await page.locator(`[data-rd-remote-session-id="${remote.sessionId}"]`).click()
+        for (const remote of remotes) {
+          const header = page.locator(`[data-rd-workspace-source-kind="remote"]`).filter({ has: page.locator(`[data-rd-host-marker="${remote.id}"]`) }).first()
+          if (await header.getAttribute('aria-expanded') === 'false') await header.click()
+          await page.locator(`[data-rd-remote-session-id="${remote.sessionId}"]`).click()
+        }
       } catch (error) {
         const diagnostic = await page.evaluate(() => ({
           frames: [...document.querySelectorAll('iframe')].map(frame => ({ src: frame.src, display: getComputedStyle(frame).display })),
@@ -182,6 +188,7 @@ async function browserMultiChecks() {
         })
       }, { wrongToken: remotes[0].token, targetOrigin: remotes[1].proxyOrigin })
       if (!result.ok) throw new Error(result.reason)
+      await page.screenshot({ path: join(artifactDir, 'multi-remote-active.png'), fullPage: true })
       await settingsUiChecks(page)
       return result.reason
     })
@@ -243,6 +250,7 @@ async function settingsUiChecks(page) {
     if (new URL(opened).origin !== new URL(href).origin) throw new Error(`opened ${opened}, expected origin ${href}`)
     return 'host row opened selected remote native DSH page without iframe token'
   })
+  await page.screenshot({ path: join(artifactDir, 'settings-hosts.png'), fullPage: true })
   await item('P1-SETTINGS-001', 'ssh config hosts listed in UI', async () => {
     for (const remote of remotes) await page.locator(`[data-rd-settings-source-id="${remote.id}"]`).waitFor({ timeout: 10000 })
     return 'all ssh config hosts appeared in Remote Desktop settings'
@@ -364,11 +372,12 @@ async function setupRemote(remote) {
     ${remoteProxyExports}
     mkdir -p "$HOME/.npm-global"
       npm config set prefix "$HOME/.npm-global"
+      corepack prepare pnpm@10.34.1 --activate
       export PATH=\"$HOME/.npm-global/bin:$PATH\"
     rm -rf ${remote.home} ${remote.sentinel}
     mkdir -p ${remote.sentinel}
     printf '${remote.text}\\n' > ${remote.sentinel}/remote-only.txt
-    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.2-alpha.4" ]; then npm install -g @deepseek-ai/dsh@0.1.2-alpha.4 --force; fi
+    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.2.0-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.2.0-rc.2 --force; fi
     DSH_HOME=${remote.home} dsh --profile web --dump-config >/tmp/dsh-rd-${remote.id}-dump.txt
     cat > ${remote.home}/settings.yaml <<'SETTINGS'
 ${ollamaSettings(remoteOllamaBaseUrl)}SETTINGS
@@ -378,7 +387,7 @@ const fs = require('fs')
 const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-p1-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
-pkg.dependencies['dsh-better-sidebar'] = '0.12.2'
+pkg.dependencies['dsh-better-sidebar'] = '0.24.1'
 pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
@@ -392,15 +401,8 @@ NODE
       grep -q 'onlyBuiltDependencies' pnpm-workspace.yaml 2>/dev/null || printf '\nonlyBuiltDependencies:\n  - node-pty\n  - protobufjs\n' >> pnpm-workspace.yaml
       grep -q 'allowBuilds:' pnpm-workspace.yaml 2>/dev/null || printf '\nallowBuilds:\n  node-pty: true\n  protobufjs: true\n' >> pnpm-workspace.yaml
 
-    CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true >/tmp/dsh-rd-${remote.id}-install.log 2>&1
-    node - <<'NODE'
-const fs = require('fs')
-const path = 'node_modules/dsh-better-sidebar/lib/index.js'
-let source = fs.readFileSync(path, 'utf8')
-source = source.replace('import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";', 'import { SettingsConflictError } from "@deepseek-ai/dsh-settings";')
-source = source.replace('const ns = settingsNamespace(SIDEBAR_PREFS_NS);', 'const ns = SIDEBAR_PREFS_NS;')
-fs.writeFileSync(path, source)
-NODE
+    CI=true pnpm install --no-frozen-lockfile >/tmp/dsh-rd-${remote.id}-install.log 2>&1
+
     pnpm rebuild node-pty >/tmp/dsh-rd-${remote.id}-node-pty.log 2>&1 || true
     if [ -f /tmp/dsh-rd-${remote.id}.pid ]; then kill $(cat /tmp/dsh-rd-${remote.id}.pid) 2>/dev/null || true; fi
     ${stopContainerListener}
@@ -494,7 +496,10 @@ async function remoteRpc(remote, method, payload) {
 async function authenticateLocal(base, output) { const d=Date.now()+10000; while(Date.now()<d){const token=/[?&]token=([A-Za-z0-9_-]+)/.exec(output())?.[1]; if(token){const r=await fetch(`${base}/?token=${token}`,{redirect:'manual'});const cookie=r.headers.get('set-cookie')?.split(';',1)[0];if(cookie)return cookie}await delay(100)}throw new Error('local DSH auth token was not printed') }
 async function localRpc(method, payload) { const rpcId=randomUUID(); const request=method==='session/prompt'?{requestId:randomUUID(),...payload}:payload; const args=method==='session/modelCatalog'?{}:method==='session/list'?{_request:request}:{request}; const res=await fetch(`${localBase}/api/${method}`,{method:'POST',headers:{'content-type':'application/json',cookie:localAuthCookie},body:JSON.stringify({type:'client-request',rpcId,method,payload:{args}})}); const json=await res.json(); if(!json.result?.ok) throw new Error(json.result?.error?.message||'local rpc failed'); return json.result.value }
 async function sidebarApi(remote, method, payload) { const res=await fetch(`${remote.proxyOrigin}/sidebar/api/${method}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const json=await res.json(); if(!json.ok) throw new Error(json.error?.message||'sidebar failed'); return json.value }
-async function terminalCommand(remote, input) { const url=`${remote.proxyOrigin.replace('http://','ws://')}/sidebar/ws/terminal?sessionId=${encodeURIComponent(remote.sessionId)}&tab=p1-${Date.now()}&cwd=${encodeURIComponent(remote.sentinel)}`; return await new Promise((resolve,reject)=>{const ws=new WebSocket(url);let data='';const timer=setTimeout(()=>{ws.close();reject(new Error('terminal timeout '+data))},8000);ws.onopen=()=>ws.send(input);ws.onmessage=e=>{data+=String(e.data); if(data.includes(remote.text)){clearTimeout(timer);ws.close();resolve(data)}};ws.onerror=()=>{clearTimeout(timer);reject(new Error('terminal websocket error '+data))}}) }
+async function terminalCommand(remote, input) {
+  return terminalThroughBrowser({ origin: remote.proxyOrigin, sessionId: remote.sessionId, input, sentinel: remote.text })
+}
+
 async function api(path, init) { const res=await fetch(`${localBase}/remote-desktop/api${path}`,{headers:{'content-type':'application/json',cookie:localAuthCookie},...init}); const json=await res.json(); if(!res.ok||json.ok!==true) throw new Error(json.error?.message||`HTTP ${res.status}`); return json }
 async function runHarness(args, env, timeoutMs) {
   return harnessRoot

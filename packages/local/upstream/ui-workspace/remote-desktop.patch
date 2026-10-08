@@ -3,7 +3,7 @@ Remote Desktop patch summary for official ui-workspace baseline 4e84901e6471b79e
 - Build the workspace tree from both local `ctx.workspaces/ctx.sessions` and connected remote snapshots.
 - Re-provide the disabled official package's `uiWorkspace` navigation service and root Workspace observable so the current `ui-sidebar` and renderer composition can activate.
 - Use source-qualified workspace/session keys so local and remote ids cannot collide.
-- Route local session row opens to `ctx.sessions.open` and remote session row opens to `store.openRemote`.
+- Route local session row opens to `ctx.uiWorkspace.openSession` and remote session row opens to `store.openRemote`.
 - Keep workspace row clicks as expand/collapse only.
 - Apply the same persisted expand/collapse state to local and remote workspace rows; remote markers do not force a row open.
 - Render one compact remote host marker plus colored dot on remote project rows; host ids map deterministically to colors.
@@ -16,3 +16,6 @@ Remote Desktop patch summary for official ui-workspace baseline 4e84901e6471b79e
 - Keep duplicate workspace-name checks source-local so two different hosts can use the same workspace title.
 
 This file intentionally records the small maintained delta instead of carrying a generated monolithic diff while `packages/local/lib/client.js` remains hand-bundled JavaScript. When the client is split into fork modules, replace this summary with `git diff --no-index baseline fork` output.
+
+- Update navigation to the recorded 0.2.0-rc.2 compatibility baseline, use mainView retention, and acquire temporary references for rename operations.
+- Keep the original browser viewing state and adapt current Regular icons and useSessionStatus hooks.

@@ -85,7 +85,7 @@
           }
           const current = remoteSnapshot.active.kind === 'remote'
             ? remoteKey(remoteSnapshot.active.sourceId, remoteSnapshot.active.sessionId || '')
-            : local.current
+            : Object.values(local.byId || {}).find(row => (row.retainedBy?.mainView || 0) > 0)?.id
           return { ...local, phase: local.phase || 'ready', ids, byId, current }
         }, [local, remoteSnapshot.sources, remoteSnapshot.snapshots, remoteSnapshot.active])
         return selector(combined)
@@ -175,6 +175,12 @@
           ...props,
           useSessions: useCombinedSessions,
           useWorkspaces: useCombinedWorkspaces,
+          // The retained presentation consumes pending interactions, while the
+          // current renderer supplies unified Session status.
+          useSessionPendingInteraction: selector => props.useSessionStatus(status => selector(
+            new Map([...status].filter(([, value]) => value.pendingInteraction !== undefined)
+              .map(([id, value]) => [id, value.pendingInteraction])),
+          )),
           startSession,
           open,
           searchSessions: searchCombinedSessions,
@@ -262,16 +268,16 @@
         ...localWorkspaces.map(ws => ({
           id: `local:${ws.workspaceId}`,
           label: ws.title || ws.path || 'Workspace',
-          icon: h(IconFolderClose16, { size: 16 }),
+          icon: h(IconFolderCloseRegular, { size: 16 }),
         })),
         ...(remoteWorkspaceRows.length > 0 ? [{ type: 'separator', id: 'remote-separator' }] : []),
         ...remoteWorkspaceRows.map(({ source, workspace }) => ({
           id: `remote:${source.id}:${workspace.workspaceId}`,
           label: h('span', { className: 'rd-hostButtonLabel' }, workspace.title || workspace.path || 'Workspace'),
-          icon: h(IconFolderClose16, { size: 16 }),
+          icon: h(IconFolderCloseRegular, { size: 16 }),
         })),
       ]
-      const footerItems = [{ id: 'add-workspace', label: 'Add workspace…', icon: h(IconProjectAddOutline16, { size: 16 }) }]
+      const footerItems = [{ id: 'add-workspace', label: 'Add workspace…', icon: h(IconProjectAddOutlineRegular, { size: 16 }) }]
       // Picker rows use source-qualified ids so local and remote Workspace ids
       // cannot collide. The conversation owner still reports its local
       // selection as the raw Workspace id, so qualify it before handing it to
@@ -386,14 +392,14 @@
         },
           h('div', { className: 'rd-addChoiceGrid', 'data-rd-add-workspace-splitter': 'true' },
             h('button', { type: 'button', className: 'rd-addChoice', onClick: openLocalFlow, 'data-rd-add-local': 'true' },
-              h('span', { className: 'rd-addChoiceIcon' }, h(IconFolderOpenOutline16, { size: 16 })),
+              h('span', { className: 'rd-addChoiceIcon' }, h(IconFolderOpenOutlineRegular, { size: 16 })),
               h('span', null,
                 h('span', { className: 'rd-addChoiceTitle' }, 'Local workspace'),
                 h('span', { className: 'rd-addChoiceDesc' }, 'Use the official picker for this DSH instance.')
               )
             ),
             h('button', { type: 'button', className: 'rd-addChoice', onClick: openRemoteFlow, 'data-rd-add-remote': 'true' },
-              h('span', { className: 'rd-addChoiceIcon' }, h(IconProjectAddOutline16, { size: 16 })),
+              h('span', { className: 'rd-addChoiceIcon' }, h(IconProjectAddOutlineRegular, { size: 16 })),
               h('span', null,
                 h('span', { className: 'rd-addChoiceTitle' }, 'Remote workspace'),
                 h('span', { className: 'rd-addChoiceDesc' }, isRemoteDesktopIframe() ? 'Ask the main host to create one on a connected remote.' : 'Create one on a connected remote host.')
@@ -501,7 +507,7 @@
               open: hostMenuOpen,
               anchor: h(Button, { variant: 'outline', className: 'rd-hostButton', disabled: busy || connected.length === 0, onClick: () => setHostMenuOpen(value => !value) },
                 h('span', { className: 'rd-hostButtonLabel' }, selected?.label || 'No connected hosts'),
-                h(IconChevronDownOutline14, { size: 14 })
+                h(IconChevronDownOutlineRegular, { size: 14 })
               ),
               items: hostItems,
               selectedId: selected?.id,
@@ -528,7 +534,7 @@
               ),
               browse.status === 'ready' && browse.entries.length === 0 && h('div', { className: 'rd-browseStatus' }, 'No folders in this directory.'),
               browse.status === 'ready' && browse.entries.map(entry => h('button', { key: entry.path, type: 'button', className: 'rd-directoryRow', disabled: busy, onClick: () => browseTo(entry.path), 'data-rd-directory-path': entry.path },
-                h(IconFolderClose16, { size: 16 }),
+                h(IconFolderCloseRegular, { size: 16 }),
                 h('span', { className: 'rd-directoryName' }, entry.name)
               ))
             )

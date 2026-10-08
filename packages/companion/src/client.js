@@ -4,7 +4,7 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const module = { exports: {} }
     const exports = module.exports
-    exports.inject = ['sessions', 'workspaces']
+    exports.inject = ['sessions', 'workspaces', 'uiWorkspace']
 
     const BRIDGE_PROTOCOL_VERSION = 1
     const BRIDGE_CAPABILITIES = Object.freeze([
@@ -65,26 +65,13 @@ window.__ModuleLoader__.load({
     }
 
     async function waitUntilCurrent(ctx, sessionId, signal) {
-      ctx.sessions.open(sessionId)
-      if (ctx.sessions.list.getSnapshot().current === sessionId) return
-      await new Promise((resolve, reject) => {
-        let settled = false
-        let off = () => {}
-        const finish = (error) => {
-          if (settled) return
-          settled = true
-          window.clearTimeout(timer)
-          off()
-          signal.removeEventListener('abort', onAbort)
-          if (error) reject(error)
-          else resolve()
-        }
-        const onAbort = () => finish(signal.reason || new Error('session open superseded'))
-        const timer = window.setTimeout(() => finish(new Error(`session ${sessionId} did not become current`)), 5000)
-        off = ctx.sessions.list.subscribe(() => {
-          if (ctx.sessions.list.getSnapshot().current === sessionId) finish()
-        })
-        signal.addEventListener('abort', onAbort, { once: true })
+      signal.throwIfAborted()
+      ctx.uiWorkspace.openSession(sessionId)
+      await ctx.sessions.using(sessionId, { source: 'controllerOperation', signal }, async reference => {
+        await reference.ready
+        signal.throwIfAborted()
+        const owners = ctx.sessions.retainInfo(sessionId).getSnapshot().retainedBy
+        if ((owners.mainView || 0) === 0) throw new Error('session open superseded')
       })
     }
 
@@ -99,11 +86,12 @@ window.__ModuleLoader__.load({
           return result.value
         }
         case 'session/rename': {
-          const binding = ctx.sessions.binding(payload.sessionId)
-          if (binding?.session === undefined) throw new Error(`unknown session "${payload.sessionId}"`)
-          const result = await binding.session.rename(payload.title)
-          if (!result.ok) throw new Error(result.error.message)
-          return result.value
+          return ctx.sessions.using(payload.sessionId, { source: 'controllerOperation', signal }, async reference => {
+            const binding = await reference.ready
+            const result = await binding.session.rename(payload.title)
+            if (!result.ok) throw new Error(result.error.message)
+            return result.value
+          })
         }
         case 'session/fork': {
           const sessionId = await ctx.sessions.fork({ sessionId: payload.sessionId, increaseTitle: true })

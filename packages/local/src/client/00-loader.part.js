@@ -6,13 +6,13 @@ window.__ModuleLoader__.load({
     const exports = module.exports
     const React = require('react')
     const {
-      Button, IconChevronDownOutline14, IconEllipsisOutline16, IconFolderClose16, IconFolderOpenOutline16,
-      IconPersonalizationOutline16, IconPlusOutline16, IconProjectAddOutline16, IconSearchOutline16, Input, Menu, Modal, StateDot,
+      Button, IconChevronDownOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenOutlineRegular,
+      IconPersonalizationOutlineRegular, IconPlusOutlineRegular, IconProjectAddOutlineRegular, IconSearchOutlineRegular, Input, Menu, Modal, StateDot,
     } = require('@deepseek-ai/dsh-client-ui-primitives')
     const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 
     exports.inject = [
-      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker',
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
     ]
 
     // Official ui-workspace copy from deepseek-harness 4e84901e6471b79ec0338099867ebb4606d12bb5.

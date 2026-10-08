@@ -23,9 +23,9 @@ test('client sidebar is project-first with a compact remote host marker', async 
   assert.match(client, /data-rd-host-marker/)
   assert.match(client, /data-rd-workspace-source-kind/)
 
-  assert.match(client, /IconPersonalizationOutline16/)
-  assert.match(client, /IconProjectAddOutline16/)
-  assert.match(client, /IconEllipsisOutline16/)
+  assert.match(client, /IconPersonalizationOutlineRegular/)
+  assert.match(client, /IconProjectAddOutlineRegular/)
+  assert.match(client, /IconEllipsisOutlineRegular/)
   assert.match(client, /OfficialWorkspace\.WorkspaceBrowser/)
   assert.doesNotMatch(client, /data-rd-host-badge/)
   assert.doesNotMatch(client, /Remote: \$\{source\.label\}/)
@@ -73,7 +73,7 @@ test('starting a local Session while a remote surface is active switches back to
 
   assert.match(client, /const startLocalWorkspace = async \(workspaceId\) =>/)
   assert.match(client, /const sessionId = await uiWorkspace\.connectWorkspace\(workspaceId\)/)
-  assert.match(client, /sessions\.open\(sessionId\)/)
+  assert.match(client, /uiWorkspace\.openSession\(sessionId\)/)
   assert.match(client, /store\.openLocal\(sessionId\)/)
   assert.match(client, /startLocalWorkspace,/)
 })

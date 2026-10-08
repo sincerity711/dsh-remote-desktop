@@ -17,6 +17,7 @@ const requiredClientNeedles = [
   'window.__dshRemoteDesktop',
   'OfficialWorkspace.UiWorkspaceService',
   'ctx.slots.provideRoot',
+  'uiWorkspace.openSession',
   'const hostInfo =',
   'openRemoteSession',
   'openLocalSession',
@@ -168,9 +169,7 @@ for (const source of [localClient, companionClient]) {
   if (source.includes('@deepseek-ai/dsh-client-runtime')) throw new Error('removed dsh-client-runtime dependency remains')
 }
 
-if (!localPatch.includes('- id: ui-workspace\n  disabled: true')) {
-  throw new Error('remote desktop must own the workspace picker when installing the splitter')
-}
+if (!localPatch.includes('- id: ui-workspace\n  disabled: true')) throw new Error('remote desktop must own its directory-flow declarations')
 
 
 const requiredContainerScripts = [

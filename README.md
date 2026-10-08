@@ -35,6 +35,10 @@ All screenshots below are synthetic and use anonymized host, user, workspace, an
 
 ![Remote Desktop settings host list](docs/assets/remote-desktop-settings.svg)
 
+## Compatibility
+
+Plugin version 0.2.0 targets DSH **0.2.0-rc.2** (the npm `latest` release verified on 2026-10-08). Upgrade the local controller and every remote companion together. DSH 0.1.x is no longer supported by this plugin version. Restart the local and remote DSH processes after replacing installed plugin packages.
+
 ## Install
 
 Install the local controller into the local DSH web profile:

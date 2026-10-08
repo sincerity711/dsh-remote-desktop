@@ -285,7 +285,7 @@ A failing run must exit non-zero and include the failing item id in stdout.
   PASS: the Better Sidebar file tree or `/sidebar/api/fs.tree` inside the remote iframe origin can see `remote-only.txt` in `/tmp/dsh-remote-desktop-sentinel`.
 
 - **P0-PLUGIN-003 terminal runs remotely**
-  PASS: the Better Sidebar terminal WebSocket returns `REMOTE_SENTINEL_WIN_WSL` from `cat /tmp/dsh-remote-desktop-sentinel/remote-only.txt`.
+  PASS: the published terminal Controller, exercised through the forwarded browser origin, returns `REMOTE_SENTINEL_WIN_WSL` from `cat /tmp/dsh-remote-desktop-sentinel/remote-only.txt`.
 
 - **P0-PLUGIN-004 local explorer not polluted**
   PASS: after switching back to Local, the top-level local UI does not show `remote-only.txt` or `REMOTE_SENTINEL_WIN_WSL` as local content.

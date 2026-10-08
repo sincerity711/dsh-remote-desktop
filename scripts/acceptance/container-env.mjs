@@ -11,7 +11,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(__dirname, '../..')
 const args = parseArgs(process.argv.slice(2))
 const command = args._[0] ?? 'help'
-const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'dsh'))
+const sourceRoot = args['harness-root'] ?? process.env.DSH_HARNESS_ROOT
+const harnessRoot = sourceRoot ? resolve(sourceRoot) : undefined
 const stateDir = join(repoRoot, '.acceptance', 'container')
 const sshKey = join(stateDir, 'id_ed25519')
 const sshPub = `${sshKey}.pub`
@@ -133,6 +134,7 @@ async function setupRemote(remote, seed, ollamaBaseUrl) {
     ${remoteProxyExports}
     mkdir -p "$HOME/.npm-global"
     npm config set prefix "$HOME/.npm-global"
+    corepack prepare pnpm@10.34.1 --activate
     export PATH="$HOME/.npm-global/bin:$PATH"
     listeners=$(ps -eo pid=,args= | awk '$2 ~ /(^|\\/)node$/ && $0 ~ /\\/dsh --profile web/ && $0 ~ /--port ${remotePort}([[:space:]]|$)/ {print $1}')
     if [ -n "$listeners" ]; then kill $listeners 2>/dev/null || true; fi
@@ -150,7 +152,7 @@ TEXT
     cat > /tmp/dsh-rd-canary/README.md <<'TEXT'
 ${body}
 TEXT
-    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.2-alpha.4" ]; then npm install -g @deepseek-ai/dsh@0.1.2-alpha.4 --force; fi
+    if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.2.0-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.2.0-rc.2 --force; fi
     if [ ! -f ~/.dsh-remote-desktop-canary/profiles/web/package.json ]; then
       DSH_HOME=~/.dsh-remote-desktop-canary dsh --profile web --dump-config >/tmp/dsh-rd-canary-dump.txt
     fi
@@ -160,7 +162,7 @@ const fs = require('fs')
 const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-canary-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
-pkg.dependencies['dsh-better-sidebar'] = '0.12.2'
+pkg.dependencies['dsh-better-sidebar'] = '0.24.1'
 pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
@@ -176,16 +178,9 @@ ${ollamaSettings(ollamaBaseUrl)}SETTINGS
     grep -q 'onlyBuiltDependencies' pnpm-workspace.yaml 2>/dev/null || printf '\nonlyBuiltDependencies:\n  - node-pty\n  - protobufjs\n' >> pnpm-workspace.yaml
     grep -q 'allowBuilds:' pnpm-workspace.yaml 2>/dev/null || printf '\nallowBuilds:\n  node-pty: true\n  protobufjs: true\n' >> pnpm-workspace.yaml
     if [ ! -d node_modules/dsh-better-sidebar ] || [ ! -e node_modules/dsh-remote-desktop-companion ]; then
-      CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true >/tmp/dsh-rd-canary-install.log 2>&1
+      CI=true pnpm install --no-frozen-lockfile >/tmp/dsh-rd-canary-install.log 2>&1
     fi
-    node - <<'NODE'
-const fs = require('fs')
-const path = 'node_modules/dsh-better-sidebar/lib/index.js'
-let source = fs.readFileSync(path, 'utf8')
-source = source.replace('import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";', 'import { SettingsConflictError } from "@deepseek-ai/dsh-settings";')
-source = source.replace('const ns = settingsNamespace(SIDEBAR_PREFS_NS);', 'const ns = SIDEBAR_PREFS_NS;')
-fs.writeFileSync(path, source)
-NODE
+
     pnpm rebuild node-pty >/tmp/dsh-rd-canary-node-pty.log 2>&1 || true
     node --input-type=module -e ${sh(verifyOllama)}
     nohup env DSH_HOME=~/.dsh-remote-desktop-canary DSH_TELEMETRY_DISABLED=1 ${ollamaApiKeyEnv}=${sh(ollamaApiKey)} dsh --profile web --host 127.0.0.1 --port ${remotePort} --trusted-host 127.0.0.1:${remotePort} > /tmp/dsh-remote-desktop-${remotePort}.log 2>&1 & echo $! > /tmp/dsh-rd-canary.pid
@@ -207,8 +202,8 @@ async function setupLocal(seed) {
   await writeFile(join(canaryHome, 'settings.yaml'), ollamaSettings(`${localOllamaBaseUrl}/v1`))
   await cmd('pnpm', ['install', '--no-frozen-lockfile'], { cwd: profile, env: { CI: 'true' }, timeoutMs: 120000 })
   const port = await freePort()
-  const child = spawn('node', ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`], {
-    cwd: harnessRoot,
+  const child = spawn(harnessRoot ? 'node' : (process.env.DSH_BIN ?? 'dsh'), [...(harnessRoot ? ['--import', 'tsx/esm', 'apps/cli/src/bin.ts'] : []), '--profile', 'web', '--host', '127.0.0.1', '--port', String(port), '--trusted-host', `127.0.0.1:${port}`], {
+    cwd: harnessRoot || repoRoot,
     env: { ...process.env, DSH_HOME: canaryHome, DSH_TELEMETRY_DISABLED: '1', DSH_REMOTE_DESKTOP_SSH_CONFIG: sshConfig, DSH_REMOTE_DESKTOP_SKIP_SETUP: '1', [ollamaApiKeyEnv]: ollamaApiKey },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -374,7 +369,11 @@ async function patchLocalProfile(profile) {
   await writeFile(packagePath, `${JSON.stringify(pkg, null, 2)}\n`)
 }
 
-async function runHarness(argv, env, timeoutMs) { return await cmd('pnpm', ['dsh', ...argv], { cwd: harnessRoot, env, timeoutMs }) }
+async function runHarness(argv, env, timeoutMs) {
+  return harnessRoot
+    ? cmd('pnpm', ['dsh', ...argv], { cwd: harnessRoot, env, timeoutMs })
+    : cmd(process.env.DSH_BIN ?? 'dsh', argv, { cwd: repoRoot, env, timeoutMs })
+}
 
 async function remoteCompanionHealth(alias) {
   const script = `const res=await fetch('http://127.0.0.1:${remotePort}/remote-desktop-companion/api/health');if(!res.ok)throw new Error('HTTP '+res.status);console.log(await res.text());`

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { terminalThroughBrowser } from './terminal-controller.mjs'
 import { createRequire } from 'node:module'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -15,7 +16,8 @@ const containerRemotes = args['container-remotes'] === 'true' || args['docker-re
 const keepLocalDsh = args['keep-local-dsh'] === 'true'
 const sshDest = args['ssh-dest'] ?? (containerRemotes ? 'remote-a' : 'win-wsl')
 const dshBin = process.env.DSH_BIN ?? 'dsh'
-const harnessRoot = resolve(args['harness-root'] ?? process.env.DSH_HARNESS_ROOT ?? join(repoRoot, '..', 'dsh'))
+const sourceRoot = args['harness-root'] ?? process.env.DSH_HARNESS_ROOT
+const harnessRoot = sourceRoot ? resolve(sourceRoot) : undefined
 const remoteHome = args['remote-home'] ?? '~/.dsh-remote-desktop-test'
 const remoteSentinelDir = '/tmp/dsh-remote-desktop-sentinel'
 const remotePort = Number(args['remote-port'] ?? 30800)
@@ -182,8 +184,9 @@ async function setupRemote() {
       ${remoteProxyExports}
       mkdir -p "$HOME/.npm-global"
       npm config set prefix "$HOME/.npm-global"
+      corepack prepare pnpm@10.34.1 --activate
       export PATH=\"$HOME/.npm-global/bin:$PATH\"
-      if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.1.2-alpha.4" ]; then npm install -g @deepseek-ai/dsh@0.1.2-alpha.4 --force; fi
+      if [ ! -x "$HOME/.npm-global/bin/dsh" ] || [ "$("$HOME/.npm-global/bin/dsh" --version 2>/dev/null || true)" != "0.2.0-rc.2" ]; then npm install -g @deepseek-ai/dsh@0.2.0-rc.2 --force; fi
       DSH_HOME=${remoteHome} dsh --profile web --dump-config >/tmp/dsh-remote-desktop-dump.txt
       cat > ${remoteHome}/settings.yaml <<'SETTINGS'
 ${ollamaSettings(remoteOllamaBaseUrl)}SETTINGS
@@ -193,7 +196,7 @@ const fs = require('fs')
 const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-acceptance-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
-pkg.dependencies['dsh-better-sidebar'] = '0.12.2'
+pkg.dependencies['dsh-better-sidebar'] = '0.24.1'
 pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
@@ -207,15 +210,8 @@ NODE
       grep -q 'onlyBuiltDependencies' pnpm-workspace.yaml 2>/dev/null || printf '\nonlyBuiltDependencies:\n  - node-pty\n  - protobufjs\n' >> pnpm-workspace.yaml
       grep -q 'allowBuilds:' pnpm-workspace.yaml 2>/dev/null || printf '\nallowBuilds:\n  node-pty: true\n  protobufjs: true\n' >> pnpm-workspace.yaml
 
-      CI=true pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true
-      node - <<'NODE'
-const fs = require('fs')
-const path = 'node_modules/dsh-better-sidebar/lib/index.js'
-let source = fs.readFileSync(path, 'utf8')
-source = source.replace('import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";', 'import { SettingsConflictError } from "@deepseek-ai/dsh-settings";')
-source = source.replace('const ns = settingsNamespace(SIDEBAR_PREFS_NS);', 'const ns = SIDEBAR_PREFS_NS;')
-fs.writeFileSync(path, source)
-NODE
+      CI=true pnpm install --no-frozen-lockfile
+
       pnpm rebuild node-pty >/tmp/dsh-remote-desktop-node-pty.log 2>&1 || true
       printf 'REMOTE_SENTINEL_WIN_WSL\n' > ${remoteSentinelDir}/remote-only.txt
       if [ -f /tmp/dsh-remote-desktop-web.pid ]; then kill $(cat /tmp/dsh-remote-desktop-web.pid) 2>/dev/null || true; fi
@@ -304,9 +300,11 @@ async function setupData() {
   })
   await item('P0-PLUGIN-003', 'terminal runs remotely', async () => {
     const text = await terminalCommand(remoteSessionId, `cat ${remoteSentinelDir}/remote-only.txt\n`)
-    if (!text.includes('REMOTE_SENTINEL_WIN_WSL')) throw new Error(`terminal output missing sentinel: ${text}`)
-    return 'terminal returned REMOTE_SENTINEL_WIN_WSL'
+    if (!text.includes('REMOTE_SENTINEL_WIN_WSL')) throw new Error('terminal output missing sentinel')
+    return 'official terminal Controller returned the remote sentinel through the forwarded origin'
   })
+
+
   await item('P0-ENV-001', 'local sentinel absence setup', async () => {
     const workspace = await localRpc('workspace/create', { path: repoRoot })
     const session = await localRpc('session/create', { workspaceId: workspace.workspace.workspaceId })
@@ -530,7 +528,10 @@ async function runBrowserChecks() {
           }
           return undefined
         }
-        const bottomPanel = () => [...document.querySelectorAll('[class*="bottomPanel"]')].find(visible)
+        const bottomPanel = () => [...document.querySelectorAll('[class*="bottomPanel"]')].find(element => {
+          const rect = element.getBoundingClientRect()
+          return rect.width > 10 && rect.height > 10 && element.checkVisibility({ checkVisibilityCSS: true })
+        })
         const bottomClose = () => [...document.querySelectorAll('[class*="bottomClose"]')].find(visible)
         const collapseBottom = async () => {
           const close = findButton(['Collapse bottom panel', '折叠底部面板']) || bottomClose()
@@ -549,7 +550,7 @@ async function runBrowserChecks() {
         open.click()
         await new Promise(resolve => setTimeout(resolve, 700))
         const panel = bottomPanel()
-        if (!panel) return { ok: false, reason: 'bottom panel did not become visible after expand click' }
+        if (!panel) return { ok: false, reason: 'bottom panel did not become visible after expand click: '+ [...document.querySelectorAll('[class]')].map(el=>el.className).filter(c=>typeof c==='string'&&/dock|panel|bottom/i.test(c)).slice(-35).join(' | ') }
         if (panel.getBoundingClientRect().width < 200) return { ok: false, reason: `bottom panel width too small: ${panel.getBoundingClientRect().width}` }
         if (!await collapseBottom()) return { ok: false, reason: 'bottom panel collapse button missing after open' }
         if (bottomPanel()) return { ok: false, reason: 'bottom panel stayed visible after collapse click' }
@@ -713,22 +714,7 @@ async function sidebarApi(method, payload) {
 }
 
 async function terminalCommand(sessionId, input) {
-  const url = `${remoteProxyOrigin.replace('http://', 'ws://')}/sidebar/ws/terminal?sessionId=${encodeURIComponent(sessionId)}&tab=acceptance-terminal-${Date.now()}&cwd=${encodeURIComponent(remoteSentinelDir)}`
-  return await new Promise((resolve, reject) => {
-    const ws = new WebSocket(url)
-    let data = ''
-    const timer = setTimeout(() => { ws.close(); reject(new Error(`terminal timeout: ${data}`)) }, 8000)
-    ws.onopen = () => { ws.send(input) }
-    ws.onmessage = event => {
-      data += String(event.data)
-      if (data.includes('REMOTE_SENTINEL_WIN_WSL')) {
-        clearTimeout(timer)
-        ws.close()
-        resolve(data)
-      }
-    }
-    ws.onerror = () => { clearTimeout(timer); reject(new Error(`terminal websocket error: ${data}`)) }
-  })
+  return terminalThroughBrowser({ origin: remoteProxyOrigin, sessionId, input, sentinel: 'REMOTE_SENTINEL_WIN_WSL' })
 }
 
 async function api(path, init) {

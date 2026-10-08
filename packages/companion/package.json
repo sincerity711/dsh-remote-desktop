@@ -1,6 +1,6 @@
 {
   "name": "dsh-remote-desktop-companion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Remote companion for dsh-remote-desktop iframe control.",
   "type": "module",
   "main": "lib/index.js",
@@ -16,17 +16,18 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-session-controller",
-        "@deepseek-ai/dsh-api-workspace-controller"
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-workspace"
       ],
       "platform": "web"
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-api-session-controller": ">=0.1.2-alpha.4 <0.2.0",
-    "@deepseek-ai/dsh-api-workspace-controller": ">=0.1.2-alpha.4 <0.2.0",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.2-alpha.4 <0.2.0",
-    "@deepseek-ai/dsh-workspace": ">=0.1.2-alpha.4 <0.2.0"
+    "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-api-workspace-controller": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.0-rc.2"
   },
   "files": [
     "lib",

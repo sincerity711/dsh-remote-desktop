@@ -33,3 +33,20 @@ Allowed `dsh-remote-desktop` changes are limited to source-aware adapters, sourc
 3. Rebuild the generated upstream section, reapply the changes summarized in `remote-desktop.patch`, and replace `packages/local/src/client/10-official-workspace.part.js`.
 4. Run `npm run build && npm run check`.
 5. Compare the local sidebar against the official sidebar; only remote workspace markers should differ.
+
+## 0.2.0 compatibility baseline
+
+The browser presentation above retains its original baseline. Navigation now follows
+`639ed015397290b3745d163aafe02ffee4aa3f84` (`dsh-v0.2.0-rc.2`), with the exact
+upstream source recorded in `compatibility/navigation.ts`. The published compiled
+navigation section is embedded in the generated browser factory. Its pin-order
+helpers consume the retained presentation's Session membership, and its view
+callbacks share the browser's store instance. Current selection is derived from
+`retainedBy.mainView`; temporary operations use `sessions.using` references.
+
+The official workspace bundle must remain disabled because its UI entries own
+exclusive directory-flow child declarations. Remote Desktop supplies those same
+declarations and the navigation service together. This is a compatibility migration,
+not a claim that the entire presentation was rebased to the 0.2 visual design.
+Icons use the current Regular exports; unified Session status is projected into the
+retained presentation's pending-interaction input.

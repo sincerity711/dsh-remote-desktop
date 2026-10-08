@@ -116,7 +116,7 @@ remote::<sourceId>::<rawWorkspaceOrSessionId>
 
 This prevents collisions between local ids and remote ids, and between different hosts. When a row is clicked, the wrapper decodes the id:
 
-- local session rows call local `ctx.sessions.open` and set active target to local;
+- local session rows call local `ctx.uiWorkspace.openSession` and set active target to local;
 - remote session rows set active target to `{ kind: "remote", sourceId, sessionId }` and issue a latest-wins `session/open` bridge request;
 - local workspace mutation actions still call local workspace/session APIs;
 - supported remote workspace/session mutations run through the owning iframe’s official `ctx.sessions`/`ctx.workspaces` client services;
@@ -189,3 +189,7 @@ The only true source fork today is the `ui-workspace` fork. Settings is an offic
 - When touching iframe layout, sidebar behavior, Settings, or Add workspace, run `npm run check` and use the manual checklist in `scripts/acceptance/check-ui-manual.md` when visual behavior changes.
 - Preserve origin and token validation for every parent/child iframe message.
 - Do not expose the iframe source token in native remote Settings URLs.
+
+## DSH 0.2 compatibility
+
+The source-aware browser retains its recorded presentation baseline. Its navigation implementation now follows DSH 0.2.0-rc.2; see the additional baseline in `packages/local/upstream/ui-workspace/UPSTREAM.md`. Current Session selection follows `mainView` references, temporary renames retain/release their Session binding, and the presentation adapts `useSessionStatus`. Directory-flow declarations remain owned by Remote Desktop, so the stock workspace UI stays disabled.

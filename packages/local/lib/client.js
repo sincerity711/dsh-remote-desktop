@@ -6,13 +6,13 @@ window.__ModuleLoader__.load({
     const exports = module.exports
     const React = require('react')
     const {
-      Button, IconChevronDownOutline14, IconEllipsisOutline16, IconFolderClose16, IconFolderOpenOutline16,
-      IconPersonalizationOutline16, IconPlusOutline16, IconProjectAddOutline16, IconSearchOutline16, Input, Menu, Modal, StateDot,
+      Button, IconChevronDownOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenOutlineRegular,
+      IconPersonalizationOutlineRegular, IconPlusOutlineRegular, IconProjectAddOutlineRegular, IconSearchOutlineRegular, Input, Menu, Modal, StateDot,
     } = require('@deepseek-ai/dsh-client-ui-primitives')
     const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 
     exports.inject = [
-      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker',
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
     ]
 
     // Official ui-workspace copy from deepseek-harness 4e84901e6471b79ec0338099867ebb4606d12bb5.
@@ -22,155 +22,298 @@ window.__ModuleLoader__.load({
       let react_jsx_runtime = require("react/jsx-runtime");
       let react = require("react");
       let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-      //#region lib/types/client/navigation.js
-      /** Workspace archive and directory UI capability. */
-      /** Structured directory failure exposed to directory UI consumers. */
-      var DirectoryBrowseError = class extends Error {
-        rpcError;
-        name = "DirectoryBrowseError";
-        /** @param rpcError - Host directory business failure. */
-        constructor(rpcError) {
-          super(`directory browse failed: ${rpcError.code}: ${rpcError.message}`);
-          this.rpcError = rpcError;
-        }
-      };
-      /** Implements Workspace archive and directory UI operations. */
-      var UiWorkspaceService = class extends _deepseek_ai_cordis.Service {
-        directoryPicker;
-        workspaces;
-        sessions;
-        connecting = /* @__PURE__ */ new Map();
-        /**
-        * @param ctx - Client root Context.
-        * @param directoryPicker - the directory-picking Remote namespace.
-        * @param workspaces - pure Workspace Controller.
-        * @param sessions - pure Session Controller.
-        */
-        constructor(ctx, directoryPicker, workspaces, sessions) {
-          super(ctx, "uiWorkspace");
-          this.directoryPicker = directoryPicker;
-          this.workspaces = workspaces;
-          this.sessions = sessions;
-          ctx.effect(() => this.watchNavigation(), "ui-workspace: Workspace navigation policy");
-        }
-        async connectWorkspace(workspaceId) {
-          const workspace = this.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === workspaceId);
-          if (workspace === void 0) throw new Error(`uiWorkspace.connectWorkspace: unknown workspace ${workspaceId}`);
-          const inflight = this.connecting.get(workspaceId);
-          if (inflight !== void 0) return inflight;
-          const archived = this.workspaces.list.getSnapshot().archivedSessionIds;
-          const sessions = this.sessions.list.getSnapshot();
-          for (const id of sessions.ids) {
-            const summary = sessions.byId[id];
-            if (summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(summary.id) && !archived.includes(summary.id)) return summary.id;
-          }
-          const attempt = this.sessions.create({ workspaceId }).finally(() => {
-            this.connecting.delete(workspaceId);
-          });
-          this.connecting.set(workspaceId, attempt);
-          return attempt;
-        }
-        startSession(workspaceId) {
-          const workspace = this.workspaces.list.getSnapshot();
-          const sessions = this.sessions.list.getSnapshot();
-          const current = sessions.current;
-          const currentWorkspaceId = current === void 0 ? void 0 : workspace.items.find((item) => item.sessionIds.includes(current))?.workspaceId;
-          const recent = workspace.phase === "ready" && sessions.phase === "ready" ? recentWorkspace(workspace.items, sessions.byId) : void 0;
-          const target = workspaceId ?? currentWorkspaceId ?? recent;
-          if (target === void 0) {
-            this.sessions.clear();
-            return;
-          }
-          this.connectWorkspace(target).then((sessionId) => {
-            this.sessions.open(sessionId);
-          }, (reason) => {
-            console.warn("new session failed:", reason);
-          });
-        }
-        async archiveSession(sessionId) {
-          await this.workspaces.archiveSession(sessionId);
-        }
-        async pickDirectory() {
-          const result = await this.directoryPicker.pick();
-          if (!result.ok) throw new Error(`directory picker failed: ${result.error.message}`);
-          return result.value;
-        }
-        async listDirectory(path, signal) {
-          const result = await this.directoryPicker.list(path, signal);
-          if (!result.ok) throw new DirectoryBrowseError(result.error);
-          return result.value;
-        }
-        async createDirectory(path, name) {
-          const result = await this.directoryPicker.createDirectory(path, name);
-          if (!result.ok) throw new DirectoryBrowseError(result.error);
-          return result.value;
-        }
-        watchNavigation() {
-          let initial = "waiting";
-          let disposed = false;
-          const reconcile = () => {
-            if (disposed) return;
-            if (this.clearArchivedCurrent()) return;
-            if (initial !== "waiting") return;
-            const workspace = this.workspaces.list.getSnapshot();
-            const sessions = this.sessions.list.getSnapshot();
-            if (workspace.phase !== "ready" || sessions.phase !== "ready") return;
-            if (sessions.current !== void 0) {
-              initial = "done";
-              return;
-            }
-            const target = recentWorkspace(workspace.items, sessions.byId);
-            if (target === void 0) {
-              initial = "done";
-              return;
-            }
-            initial = "connecting";
-            this.connectWorkspace(target).then((sessionId) => {
-              if (disposed) return;
-              if (this.sessions.list.getSnapshot().current === void 0) this.sessions.open(sessionId);
-              initial = "done";
-            }, (reason) => {
-              if (disposed) return;
-              initial = "waiting";
-              console.warn("initial workspace selection failed:", reason);
-            });
-          };
-          const disposeWorkspaces = this.workspaces.list.subscribe(reconcile);
-          const disposeSessions = this.sessions.list.subscribe(reconcile);
-          reconcile();
-          return () => {
-            disposed = true;
-            disposeSessions();
-            disposeWorkspaces();
-          };
-        }
-        /** @returns true when an archived current selection was cleared. */
-        clearArchivedCurrent() {
-          const current = this.sessions.list.getSnapshot().current;
-          if (current === void 0 || !this.workspaces.list.getSnapshot().archivedSessionIds.includes(current)) return false;
-          this.sessions.clear();
-          return true;
-        }
-      };
-      /** Stable tie-breaking follows Host Workspace order. */
-      function recentWorkspace(workspaces, sessions) {
-        let selected;
-        let selectedTime = Number.NEGATIVE_INFINITY;
-        for (const workspace of workspaces) {
-          let latest = Number.NEGATIVE_INFINITY;
-          for (const sessionId of workspace.sessionIds) {
-            const session = sessions[sessionId];
-            if (session !== void 0) latest = Math.max(latest, session.updatedAt);
-          }
-          if (latest === Number.NEGATIVE_INFINITY) latest = Date.parse(workspace.createdAt);
-          if (selected === void 0 || latest > selectedTime) {
-            selected = workspace.workspaceId;
-            selectedTime = latest;
-          }
-        }
-        return selected;
-      }
-      //#endregion
+//#region lib/types/client/navigation.js
+		/** Workspace archive and directory UI capability. */
+		/** Structured directory failure exposed to directory UI consumers. */
+		var DirectoryBrowseError = class extends Error {
+			rpcError;
+			name = "DirectoryBrowseError";
+			/** @param rpcError - Host directory business failure. */
+			constructor(rpcError) {
+				super(`directory browse failed: ${rpcError.code}: ${rpcError.message}`);
+				this.rpcError = rpcError;
+			}
+		};
+		/** Implements Workspace archive and directory UI operations. */
+		var UiWorkspaceService = class extends _deepseek_ai_cordis.Service {
+			directoryPicker;
+			workspaces;
+			sessions;
+			view;
+			notify;
+			connecting = /* @__PURE__ */ new Map();
+			lifetime = new AbortController();
+			selection = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({}, { persist: { name: "dsh.sessions.current" } });
+			mainReference;
+			/**
+			* @param ctx - Client root Context.
+			* @param directoryPicker - the directory-picking Remote namespace.
+			* @param workspaces - pure Workspace Controller.
+			* @param sessions - pure Session Controller.
+			* @param view - the browser's viewing-store write set (one instance shared with its registration).
+			* @param notify - show one notice through the Workspace notice channel.
+			*/
+			constructor(ctx, directoryPicker, workspaces, sessions, view, notify) {
+				super(ctx, "uiWorkspace");
+				this.directoryPicker = directoryPicker;
+				this.workspaces = workspaces;
+				this.sessions = sessions;
+				this.view = view;
+				this.notify = notify;
+				ctx.effect(() => {
+					const stop = this.watchNavigation();
+					return () => {
+						stop();
+						this.lifetime.abort();
+						const reference = this.mainReference;
+						this.mainReference = void 0;
+						reference?.release();
+					};
+				}, "ui-workspace: Workspace navigation policy");
+			}
+			async connectWorkspace(workspaceId) {
+				const workspace = this.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === workspaceId);
+				if (workspace === void 0) throw new Error(`uiWorkspace.connectWorkspace: unknown workspace ${workspaceId}`);
+				const inflight = this.connecting.get(workspaceId);
+				if (inflight !== void 0) return inflight;
+				const attempt = this.reuseOrCreateBlank(workspace).finally(() => {
+					this.connecting.delete(workspaceId);
+				});
+				this.connecting.set(workspaceId, attempt);
+				return attempt;
+			}
+			reuseOrCreateBlank(workspace) {
+				const archived = this.workspaces.list.getSnapshot().archivedSessionIds;
+				const sessions = this.sessions.list.getSnapshot();
+				for (const id of sessions.ids) {
+					const summary = sessions.byId[id];
+					if (summary === void 0 || !summary.blank || summary.cwd !== workspace.path || !workspace.sessionIds.includes(id) || archived.includes(id)) continue;
+					return this.reuseBlank(workspace.workspaceId, id);
+				}
+				return this.sessions.create({ workspaceId: workspace.workspaceId });
+			}
+			async reuseBlank(workspaceId, sessionId) {
+				try {
+					return await this.sessions.create({
+						workspaceId,
+						sessionId
+					});
+				} catch (error) {
+					if (sessionCreateErrorOf(error)?.rpcError.code !== "session/writer-held") throw error;
+					return this.sessions.create({ workspaceId });
+				}
+			}
+			openSession(target) {
+				this.replaceMain(target, this.lifetime.signal, "reveal");
+			}
+			async openWorkspace(workspaceId, beforeOpen) {
+				const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal]);
+				let sessionId;
+				try {
+					sessionId = await this.connectWorkspace(workspaceId);
+				} catch (error) {
+					if (!navigation.aborted) this.notify({
+						kind: "createFailed",
+						message: creationFailureMessage(error)
+					});
+					throw error;
+				}
+				if (navigation.aborted) return;
+				this.replaceMain(sessionId, navigation, "reveal", beforeOpen);
+			}
+			async forkSession(sessionId, onCreated) {
+				return this.sessions.fork({
+					sessionId,
+					increaseTitle: true,
+					...onCreated === void 0 ? {} : { onCreated }
+				});
+			}
+			startSession(workspaceId) {
+				const workspace = this.workspaces.list.getSnapshot();
+				const sessions = this.sessions.list.getSnapshot();
+				const current = this.mainReference?.sessionId;
+				const currentWorkspaceId = current === void 0 ? void 0 : workspace.items.find((item) => item.sessionIds.includes(current))?.workspaceId;
+				const recent = workspace.phase === "ready" && sessions.phase === "ready" ? recentWorkspace(workspace.items, sessions.byId) : void 0;
+				const target = workspaceId ?? currentWorkspaceId ?? recent;
+				if (target === void 0) {
+					this.clearMain();
+					return;
+				}
+				this.openWorkspace(target).catch((reason) => {
+					console.warn("new session failed:", reason);
+				});
+			}
+			async archiveSession(sessionId, options = {}) {
+				await this.workspaces.archiveSession(sessionId, options);
+				if (this.mainReference?.sessionId === sessionId) this.clearMain();
+			}
+			async unarchiveSession(sessionId) {
+				await this.workspaces.unarchiveSession(sessionId);
+			}
+			async pinSession(sessionId) {
+				await this.workspaces.pinSession(sessionId);
+				const { items, pinnedSessionIds, archivedSessionIds } = this.workspaces.list.getSnapshot();
+				this.view.pinSessionOrder(sessionId, pinOrderAccounts(items, sessionId), pinOrderSource(items, this.sessions.list.getSnapshot(), {
+					pinnedSessionIds,
+					archivedSessionIds
+				}));
+			}
+			async unpinSession(sessionId) {
+				await this.workspaces.unpinSession(sessionId);
+			}
+			async pickDirectory() {
+				const result = await this.directoryPicker.pick();
+				if (!result.ok) throw new Error(`directory picker failed: ${result.error.message}`);
+				return result.value;
+			}
+			async listDirectory(path, signal) {
+				const result = await this.directoryPicker.list(path, signal);
+				if (!result.ok) throw new DirectoryBrowseError(result.error);
+				return result.value;
+			}
+			async createDirectory(path, name) {
+				const result = await this.directoryPicker.createDirectory(path, name);
+				if (!result.ok) throw new DirectoryBrowseError(result.error);
+				return result.value;
+			}
+			watchNavigation() {
+				let initial = "waiting";
+				const reconcile = () => {
+					if (this.lifetime.signal.aborted) return;
+					if (this.clearArchivedCurrent()) return;
+					if (initial !== "waiting") return;
+					const workspace = this.workspaces.list.getSnapshot();
+					const sessions = this.sessions.list.getSnapshot();
+					if (workspace.phase !== "ready" || sessions.phase !== "ready") return;
+					if (this.mainReference !== void 0) {
+						initial = "done";
+						return;
+					}
+					initial = "connecting";
+					this.restoreSelection(workspace, sessions).then(() => {
+						initial = "done";
+					}, (reason) => {
+						if (this.lifetime.signal.aborted) return;
+						initial = "waiting";
+						console.warn("initial Session restoration failed:", reason);
+					});
+				};
+				const disposeWorkspaces = this.workspaces.list.subscribe(reconcile);
+				const disposeSessions = this.sessions.list.subscribe(reconcile);
+				reconcile();
+				return () => {
+					this.lifetime.abort();
+					disposeSessions();
+					disposeWorkspaces();
+				};
+			}
+			async restoreSelection(workspaces, sessions) {
+				const saved = this.selection.getSnapshot();
+				if (saved.subagentAddress !== void 0) {
+					this.replaceMain(saved.subagentAddress, this.lifetime.signal, "preserve");
+					return;
+				}
+				const summary = saved.sessionId === void 0 ? void 0 : sessions.byId[saved.sessionId];
+				const workspace = summary === void 0 ? void 0 : workspaces.items.find((item) => item.sessionIds.includes(summary.id));
+				if (summary !== void 0 && (!summary.blank || workspace === void 0)) {
+					this.replaceMain(summary.id, this.lifetime.signal, "preserve");
+					return;
+				}
+				const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal]);
+				let sessionId;
+				if (summary !== void 0 && workspace !== void 0 && summary.cwd === workspace.path && !workspaces.archivedSessionIds.includes(summary.id)) sessionId = await this.reuseBlank(workspace.workspaceId, summary.id);
+				let target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId);
+				if (target === void 0 && workspaces.items.length === 0 && sessions.ids.length === 0) {
+					const prepared = await this.initializeDefaultWorkspace(navigation);
+					if (navigation.aborted) return;
+					target = prepared?.workspaceId;
+				}
+				if (sessionId === void 0 && target !== void 0) sessionId = await this.connectWorkspace(target);
+				if (sessionId !== void 0 && !navigation.aborted) this.replaceMain(sessionId, navigation, "preserve");
+			}
+			async initializeDefaultWorkspace(signal) {
+				try {
+					return await this.workspaces.initializeDefault(signal);
+				} catch (_error) {
+					if (!signal.aborted) this.notify({ kind: "defaultWorkspaceFailed" });
+					return;
+				}
+			}
+			/** @returns true when an archived current selection was cleared. */
+			clearArchivedCurrent() {
+				const current = this.mainReference?.sessionId;
+				if (current === void 0 || !this.workspaces.list.getSnapshot().archivedSessionIds.includes(current)) return false;
+				this.clearMain();
+				return true;
+			}
+			clearMain() {
+				const previous = this.mainReference;
+				this.mainReference = void 0;
+				this.selection.set({});
+				previous?.release();
+				this.ctx.layout.selectPanel(null);
+			}
+			replaceMain(target, signal, panel, beforeOpen) {
+				signal.throwIfAborted();
+				const reference = this.sessions.retain(target, { source: "mainView" });
+				try {
+					signal.throwIfAborted();
+					beforeOpen?.(reference.sessionId);
+					if (signal.aborted) {
+						reference.release();
+						return;
+					}
+					const subagentAddress = typeof target === "string" ? this.sessions.subagentAddress(reference.sessionId) : target;
+					this.selection.set({
+						sessionId: reference.sessionId,
+						...subagentAddress === void 0 ? {} : { subagentAddress }
+					});
+				} catch (error) {
+					reference.release();
+					throw error;
+				}
+				const previous = this.mainReference;
+				this.mainReference = reference;
+				previous?.release();
+				if (panel === "reveal") this.ctx.layout.selectPanel(null);
+			}
+		};
+		/**
+		* `error` as the Session Controller's creation failure, or undefined when it
+		* is not one. Client plugin bundles do not share error-class identity, so the
+		* name decides.
+		*/
+		function sessionCreateErrorOf(error) {
+			return error instanceof Error && error.name === "SessionCreateError" ? error : void 0;
+		}
+		/**
+		* The words a failed Session creation is reported in: a Host refusal keeps its
+		* stable code and message; any other failure keeps its own message.
+		*/
+		function creationFailureMessage(error) {
+			const refused = sessionCreateErrorOf(error);
+			if (refused !== void 0) return `${refused.rpcError.code}: ${refused.rpcError.message}`;
+			return error instanceof Error ? error.message : String(error);
+		}
+		/** Stable tie-breaking follows Host Workspace order. */
+		function recentWorkspace(workspaces, sessions) {
+			let selected;
+			let selectedTime = Number.NEGATIVE_INFINITY;
+			for (const workspace of workspaces) {
+				let latest = Number.NEGATIVE_INFINITY;
+				for (const sessionId of workspace.sessionIds) {
+					const session = sessions[sessionId];
+					if (session !== void 0) latest = Math.max(latest, session.updatedAt);
+				}
+				if (latest === Number.NEGATIVE_INFINITY) latest = Date.parse(workspace.createdAt);
+				if (selected === void 0 || latest > selectedTime) {
+					selected = workspace.workspaceId;
+					selectedTime = latest;
+				}
+			}
+			return selected;
+		}
+		//#endregion
       //#region lib/types/client/stores.js
       /**
       * The workspace browser's viewing store: the session-list grouping mode,
@@ -196,6 +339,12 @@ window.__ModuleLoader__.load({
           }),
           persist: "dsh.workspace.view.v5",
           actions: {
+            pinSessionOrder: (d, sessionId, accountKeys) => {
+              for (const key of accountKeys) {
+                const order = d.sessionOrderByAccount[key] || [];
+                d.sessionOrderByAccount[key] = [sessionId, ...order.filter(id => id !== sessionId)];
+              }
+            },
             setGroupBy: (d, mode) => {
               d.groupBy = mode;
             },
@@ -222,6 +371,37 @@ window.__ModuleLoader__.load({
         });
       }
       //#endregion
+//#region lib/types/client/pin-order.js
+		/**
+		* Every account's complete membership: each Workspace, Ungrouped, and the flat list.
+		* @param workspaces - current Host Workspaces.
+		* @param list - current Session list snapshot.
+		* @param rowState - registry-global pin and archive sets.
+		* @returns the order source for one pin write.
+		*/
+		function pinOrderSource(workspaces, list, rowState) {
+			const accounted = new Set(workspaces.flatMap((workspace) => workspace.sessionIds));
+			return {
+				members: Object.fromEntries([
+					...workspaces.map((workspace) => [workspace.workspaceId, workspace.sessionIds]),
+					["", list.ids.filter((id) => list.byId[id] !== void 0 && !accounted.has(id))],
+					[FLAT_SESSION_ORDER_KEY, list.ids]
+				]),
+				summaries: list.byId,
+				rowState
+			};
+		}
+		/**
+		* The accounts a pinned Session leads: its group (or Ungrouped) and the flat list.
+		* @param workspaces - current Host Workspaces.
+		* @param sessionId - the Session being pinned.
+		* @returns the account keys `pinSessionOrder` fronts.
+		*/
+		function pinOrderAccounts(workspaces, sessionId) {
+			return [workspaces.find(workspace => workspace.sessionIds.includes(sessionId))?.workspaceId || "", FLAT_SESSION_ORDER_KEY];
+		}
+		//#endregion
+
       //#region ../../../node_modules/.pnpm/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs
       function r(e) {
         var t, f, n = "";
@@ -708,15 +888,15 @@ window.__ModuleLoader__.load({
         const workspaceMenuItems = actions?.archiveAll !== void 0 ? [{
           id: "archive-all",
           label: t("menu.archiveAllSessions"),
-          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutline20, { size: 16 })
+          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 16 })
         }] : [{
           id: "rename",
           label: t("rename"),
-          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
+          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutlineRegular, {})
         }, {
           id: "delete",
           label: t("delete.workspace"),
-          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
+          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular, {}),
           danger: true
         }];
         const ownRow = (0, react_jsx_runtime.jsxs)("div", {
@@ -737,11 +917,11 @@ window.__ModuleLoader__.load({
           children: [
             (0, react_jsx_runtime.jsx)("span", {
               className: clsx(Rows_module_css_default.slot, Rows_module_css_default.folder, active && Rows_module_css_default.folderActive),
-              children: row.expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpen16, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderClose16, {})
+              children: row.expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpenRegular, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderCloseRegular, {})
             }),
             (0, react_jsx_runtime.jsx)("span", {
               className: clsx(Rows_module_css_default.slot, Rows_module_css_default.chevron),
-              children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTriangleRightFill14, { className: clsx(Rows_module_css_default.arrow, row.expanded && Rows_module_css_default.arrowOpen) })
+              children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTriangleRightFillRegular, { className: clsx(Rows_module_css_default.arrow, row.expanded && Rows_module_css_default.arrowOpen) })
             }),
             (0, react_jsx_runtime.jsx)("span", {
               className: Rows_module_css_default.projectText,
@@ -782,7 +962,7 @@ window.__ModuleLoader__.load({
                     e.stopPropagation();
                     setMenuOpen((v) => !v);
                   },
-                  children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutline16, {})
+                  children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutlineRegular, {})
                 })
               }), row.workspaceId !== void 0 && (0, react_jsx_runtime.jsx)("button", {
                 type: "button",
@@ -792,7 +972,7 @@ window.__ModuleLoader__.load({
                   e.stopPropagation();
                   onCreate();
                 },
-                children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, {})
+                children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutlineRegular, {})
               })]
             })
           ]
@@ -882,7 +1062,7 @@ window.__ModuleLoader__.load({
           role: "img",
           "aria-label": label,
           title: label,
-          children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconAlarmClockOutline16, {})
+          children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconAlarmClockOutlineRegular, {})
         });
       }
       /** Hover-card body: full title, relative time, and every relevant live status. */
@@ -982,17 +1162,17 @@ window.__ModuleLoader__.load({
           {
             id: "rename",
             label: t("rename"),
-            icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
+            icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutlineRegular, {})
           },
           {
             id: "fork",
             label: t("menu.fork"),
-            icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
+            icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutlineRegular, {})
           },
           {
             id: "archive",
             label: t("menu.archiveSession"),
-            icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutline20, { size: 16 })
+            icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 16 })
           }
         ];
         return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.HoverCard, {
@@ -1061,7 +1241,7 @@ window.__ModuleLoader__.load({
                       e.stopPropagation();
                       setMenuOpen((v) => !v);
                     },
-                    children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutline16, {})
+                    children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutlineRegular, {})
                   })
                 })
               })
@@ -1118,14 +1298,14 @@ window.__ModuleLoader__.load({
         const addEntries = flowAvailable ? [{
           id: ADD_WORKSPACE,
           label: t("menu.addWorkspace"),
-          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 16 }),
+          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutlineRegular, { size: 16 }),
           disabled: flowBusy
         }] : [];
         const pinAdd = !addOnly && workspaces.length > 0;
         const items = pinAdd ? workspaces.map((workspace) => ({
           id: workspace.workspaceId,
           label: workspace.title,
-          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderClose16, { size: 16 }),
+          icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderCloseRegular, { size: 16 }),
           disabled: flowBusy
         })) : addEntries;
         const menuIsEmpty = items.length === 0;
@@ -1484,7 +1664,7 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 setOpen((v) => !v);
               },
-              children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPersonalizationOutline16, {})
+              children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPersonalizationOutlineRegular, {})
             })
           })
         });
@@ -2252,7 +2432,7 @@ window.__ModuleLoader__.load({
                             setWsPickerOpen(false);
                             setSearchExpanded(true);
                           },
-                          children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutline16, { size: searchExpanded ? 11 : 14 })
+                          children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutlineRegular, { size: searchExpanded ? 11 : 14 })
                         })
                       }),
                       (0, react_jsx_runtime.jsx)("input", {
@@ -2281,7 +2461,7 @@ window.__ModuleLoader__.load({
                           setQuery("");
                           setSearchExpanded(false);
                         },
-                        children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseFill14, {})
+                        children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseFillRegular, {})
                       })
                     ]
                   })
@@ -2311,7 +2491,7 @@ window.__ModuleLoader__.load({
                   if (openWorkspaceAdd !== void 0) openWorkspaceAdd(wsPlusRef);
                   else setWsPickerOpen((v) => !v);
                       },
-                      children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconProjectAddOutline16, { size: wide ? 16 : 18 })
+                      children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconProjectAddOutlineRegular, { size: wide ? 16 : 18 })
                     })
                   })]
                 }),
@@ -2348,7 +2528,7 @@ window.__ModuleLoader__.load({
                     setSearchOnExpand(true);
                     expandSidebar();
                   },
-                  children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutline16, { size: 18 })
+                  children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutlineRegular, { size: 18 })
                 })
               })
             }),
@@ -3200,7 +3380,7 @@ window.__ModuleLoader__.load({
           }
           const current = remoteSnapshot.active.kind === 'remote'
             ? remoteKey(remoteSnapshot.active.sourceId, remoteSnapshot.active.sessionId || '')
-            : local.current
+            : Object.values(local.byId || {}).find(row => (row.retainedBy?.mainView || 0) > 0)?.id
           return { ...local, phase: local.phase || 'ready', ids, byId, current }
         }, [local, remoteSnapshot.sources, remoteSnapshot.snapshots, remoteSnapshot.active])
         return selector(combined)
@@ -3290,6 +3470,12 @@ window.__ModuleLoader__.load({
           ...props,
           useSessions: useCombinedSessions,
           useWorkspaces: useCombinedWorkspaces,
+          // The retained presentation consumes pending interactions, while the
+          // current renderer supplies unified Session status.
+          useSessionPendingInteraction: selector => props.useSessionStatus(status => selector(
+            new Map([...status].filter(([, value]) => value.pendingInteraction !== undefined)
+              .map(([id, value]) => [id, value.pendingInteraction])),
+          )),
           startSession,
           open,
           searchSessions: searchCombinedSessions,
@@ -3377,16 +3563,16 @@ window.__ModuleLoader__.load({
         ...localWorkspaces.map(ws => ({
           id: `local:${ws.workspaceId}`,
           label: ws.title || ws.path || 'Workspace',
-          icon: h(IconFolderClose16, { size: 16 }),
+          icon: h(IconFolderCloseRegular, { size: 16 }),
         })),
         ...(remoteWorkspaceRows.length > 0 ? [{ type: 'separator', id: 'remote-separator' }] : []),
         ...remoteWorkspaceRows.map(({ source, workspace }) => ({
           id: `remote:${source.id}:${workspace.workspaceId}`,
           label: h('span', { className: 'rd-hostButtonLabel' }, workspace.title || workspace.path || 'Workspace'),
-          icon: h(IconFolderClose16, { size: 16 }),
+          icon: h(IconFolderCloseRegular, { size: 16 }),
         })),
       ]
-      const footerItems = [{ id: 'add-workspace', label: 'Add workspace…', icon: h(IconProjectAddOutline16, { size: 16 }) }]
+      const footerItems = [{ id: 'add-workspace', label: 'Add workspace…', icon: h(IconProjectAddOutlineRegular, { size: 16 }) }]
       // Picker rows use source-qualified ids so local and remote Workspace ids
       // cannot collide. The conversation owner still reports its local
       // selection as the raw Workspace id, so qualify it before handing it to
@@ -3501,14 +3687,14 @@ window.__ModuleLoader__.load({
         },
           h('div', { className: 'rd-addChoiceGrid', 'data-rd-add-workspace-splitter': 'true' },
             h('button', { type: 'button', className: 'rd-addChoice', onClick: openLocalFlow, 'data-rd-add-local': 'true' },
-              h('span', { className: 'rd-addChoiceIcon' }, h(IconFolderOpenOutline16, { size: 16 })),
+              h('span', { className: 'rd-addChoiceIcon' }, h(IconFolderOpenOutlineRegular, { size: 16 })),
               h('span', null,
                 h('span', { className: 'rd-addChoiceTitle' }, 'Local workspace'),
                 h('span', { className: 'rd-addChoiceDesc' }, 'Use the official picker for this DSH instance.')
               )
             ),
             h('button', { type: 'button', className: 'rd-addChoice', onClick: openRemoteFlow, 'data-rd-add-remote': 'true' },
-              h('span', { className: 'rd-addChoiceIcon' }, h(IconProjectAddOutline16, { size: 16 })),
+              h('span', { className: 'rd-addChoiceIcon' }, h(IconProjectAddOutlineRegular, { size: 16 })),
               h('span', null,
                 h('span', { className: 'rd-addChoiceTitle' }, 'Remote workspace'),
                 h('span', { className: 'rd-addChoiceDesc' }, isRemoteDesktopIframe() ? 'Ask the main host to create one on a connected remote.' : 'Create one on a connected remote host.')
@@ -3616,7 +3802,7 @@ window.__ModuleLoader__.load({
               open: hostMenuOpen,
               anchor: h(Button, { variant: 'outline', className: 'rd-hostButton', disabled: busy || connected.length === 0, onClick: () => setHostMenuOpen(value => !value) },
                 h('span', { className: 'rd-hostButtonLabel' }, selected?.label || 'No connected hosts'),
-                h(IconChevronDownOutline14, { size: 14 })
+                h(IconChevronDownOutlineRegular, { size: 14 })
               ),
               items: hostItems,
               selectedId: selected?.id,
@@ -3643,7 +3829,7 @@ window.__ModuleLoader__.load({
               ),
               browse.status === 'ready' && browse.entries.length === 0 && h('div', { className: 'rd-browseStatus' }, 'No folders in this directory.'),
               browse.status === 'ready' && browse.entries.map(entry => h('button', { key: entry.path, type: 'button', className: 'rd-directoryRow', disabled: busy, onClick: () => browseTo(entry.path), 'data-rd-directory-path': entry.path },
-                h(IconFolderClose16, { size: 16 }),
+                h(IconFolderCloseRegular, { size: 16 }),
                 h('span', { className: 'rd-directoryName' }, entry.name)
               ))
             )
@@ -3842,15 +4028,19 @@ window.__ModuleLoader__.load({
       const iframeMode = isRemoteDesktopIframe()
       const sessions = ctx.get('sessions')
       const workspaces = ctx.get('workspaces')
+      const viewHandle = OfficialWorkspace.createWorkspaceViewStore()
+      const viewInstance = viewHandle.create()
+      const viewStore = { ...viewHandle, create: () => viewInstance }
       const uiWorkspace = new OfficialWorkspace.UiWorkspaceService(
         ctx, ctx.remote.directoryPicker, workspaces, sessions,
+        viewInstance.actions, notice => console.warn('workspace navigation:', notice),
       )
       ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
-      const openLocal = (sessionId) => sessions.open(sessionId)
+      const openLocal = (sessionId) => uiWorkspace.openSession(sessionId)
       const createLocalWorkspace = input => workspaces.create(input)
       const startLocalWorkspace = async (workspaceId) => {
         const sessionId = await uiWorkspace.connectWorkspace(workspaceId)
-        sessions.open(sessionId)
+        uiWorkspace.openSession(sessionId)
         // The official Session Controller changes the local selection, while
         // Remote Desktop separately owns which Host surface is visible.
         // Always switch that second state back to local as part of this action.
@@ -3895,7 +4085,7 @@ window.__ModuleLoader__.load({
         name: 'sidebar.workspaces',
         priority: -10,
         children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
-        store: OfficialWorkspace.createWorkspaceViewStore(),
+        store: viewStore,
         inject: () => ({
           openLocal,
           createLocalWorkspace,
@@ -3906,13 +4096,14 @@ window.__ModuleLoader__.load({
           insertSessionBefore: (workspaceId, sessionId, beforeSessionId) => workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId),
           archiveSession: sessionId => uiWorkspace.archiveSession(sessionId),
           renameSession: async (sessionId, title) => {
-            const session = sessions.binding(sessionId)?.session
-            if (session === undefined) throw new Error(`unknown session "${sessionId}"`)
-            const result = await session.rename(title)
-            if (!result.ok) throw new Error(result.error.message)
+            await sessions.using(sessionId, { source: 'controllerOperation' }, async reference => {
+              const binding = await reference.ready
+              const result = await binding.session.rename(title)
+              if (!result.ok) throw new Error(result.error.message)
+            })
           },
           forkSession: sessionId => {
-            sessions.fork({ sessionId, increaseTitle: true }).then(childId => sessions.open(childId)).catch(() => {})
+            sessions.fork({ sessionId, increaseTitle: true }).then(childId => uiWorkspace.openSession(childId)).catch(() => {})
           },
           searchSessions: async (query, signal) => {
             const result = await sessions.search(query, signal)

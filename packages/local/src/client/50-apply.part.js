@@ -13,15 +13,19 @@
       const iframeMode = isRemoteDesktopIframe()
       const sessions = ctx.get('sessions')
       const workspaces = ctx.get('workspaces')
+      const viewHandle = OfficialWorkspace.createWorkspaceViewStore()
+      const viewInstance = viewHandle.create()
+      const viewStore = { ...viewHandle, create: () => viewInstance }
       const uiWorkspace = new OfficialWorkspace.UiWorkspaceService(
         ctx, ctx.remote.directoryPicker, workspaces, sessions,
+        viewInstance.actions, notice => console.warn('workspace navigation:', notice),
       )
       ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
-      const openLocal = (sessionId) => sessions.open(sessionId)
+      const openLocal = (sessionId) => uiWorkspace.openSession(sessionId)
       const createLocalWorkspace = input => workspaces.create(input)
       const startLocalWorkspace = async (workspaceId) => {
         const sessionId = await uiWorkspace.connectWorkspace(workspaceId)
-        sessions.open(sessionId)
+        uiWorkspace.openSession(sessionId)
         // The official Session Controller changes the local selection, while
         // Remote Desktop separately owns which Host surface is visible.
         // Always switch that second state back to local as part of this action.
@@ -66,7 +70,7 @@
         name: 'sidebar.workspaces',
         priority: -10,
         children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
-        store: OfficialWorkspace.createWorkspaceViewStore(),
+        store: viewStore,
         inject: () => ({
           openLocal,
           createLocalWorkspace,
@@ -77,13 +81,14 @@
           insertSessionBefore: (workspaceId, sessionId, beforeSessionId) => workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId),
           archiveSession: sessionId => uiWorkspace.archiveSession(sessionId),
           renameSession: async (sessionId, title) => {
-            const session = sessions.binding(sessionId)?.session
-            if (session === undefined) throw new Error(`unknown session "${sessionId}"`)
-            const result = await session.rename(title)
-            if (!result.ok) throw new Error(result.error.message)
+            await sessions.using(sessionId, { source: 'controllerOperation' }, async reference => {
+              const binding = await reference.ready
+              const result = await binding.session.rename(title)
+              if (!result.ok) throw new Error(result.error.message)
+            })
           },
           forkSession: sessionId => {
-            sessions.fork({ sessionId, increaseTitle: true }).then(childId => sessions.open(childId)).catch(() => {})
+            sessions.fork({ sessionId, increaseTitle: true }).then(childId => uiWorkspace.openSession(childId)).catch(() => {})
           },
           searchSessions: async (query, signal) => {
             const result = await sessions.search(query, signal)
