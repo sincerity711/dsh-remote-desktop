@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
 export const DEFAULT_REMOTE_DSH_PORT = 30800
-export const REMOTE_COMPANION_PACKAGE = 'dsh-remote-desktop-companion'
+export const REMOTE_COMPANION_PACKAGE = 'dsh-ssh-workspace-companion'
 export const REMOTE_COMPANION_HEALTH_PATH = '/remote-desktop-companion/api/health'
 
 export const name = 'dsh-remote-desktop'

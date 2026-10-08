@@ -50,7 +50,7 @@ test('remote setup SSH command installs companion before connecting', () => {
   assert.deepEqual(args.slice(0, 3), ['-o', 'BatchMode=yes', 'win-wsl'])
   const command = args.at(-1)
   assert.match(command, /dsh plugin --profile web add/)
-  assert.match(command, /dsh-remote-desktop-companion/)
+  assert.match(command, /dsh-ssh-workspace-companion/)
   assert.match(command, /remote_desktop_has_companion/)
   assert.match(command, /DSH_REMOTE_DESKTOP_INSTALL=1/)
   assert.match(command, /dsh --profile web --host/)

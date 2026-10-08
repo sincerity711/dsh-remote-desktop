@@ -1,3 +1,3 @@
 - insert:
     - id: remote-desktop-companion
-      name: dsh-remote-desktop-companion
+      name: dsh-ssh-workspace-companion

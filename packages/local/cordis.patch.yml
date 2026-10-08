@@ -4,4 +4,4 @@
 
 - insert:
     - id: remote-desktop
-      name: dsh-remote-desktop
+      name: dsh-ssh-workspace

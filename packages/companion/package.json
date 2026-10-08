@@ -1,6 +1,6 @@
 {
-  "name": "dsh-remote-desktop-companion",
-  "version": "0.2.0",
+  "name": "dsh-ssh-workspace-companion",
+  "version": "0.2.1",
   "description": "Remote companion for dsh-remote-desktop iframe control.",
   "type": "module",
   "main": "lib/index.js",
@@ -49,14 +49,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sincerity711/dsh-remote-desktop.git",
+    "url": "git+https://github.com/sincerity711/dsh-ssh-workspace.git",
     "directory": "packages/companion"
   },
   "bugs": {
-    "url": "https://github.com/sincerity711/dsh-remote-desktop/issues"
+    "url": "https://github.com/sincerity711/dsh-ssh-workspace/issues"
   },
-  "homepage": "https://github.com/sincerity711/dsh-remote-desktop#readme",
+  "homepage": "https://github.com/sincerity711/dsh-ssh-workspace#readme",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

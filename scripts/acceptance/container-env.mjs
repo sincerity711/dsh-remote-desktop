@@ -163,11 +163,11 @@ const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-canary-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
 pkg.dependencies['dsh-better-sidebar'] = '0.24.1'
-pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
+pkg.dependencies['dsh-ssh-workspace-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
 pkg.dsh.profile.bundles = pkg.dsh.profile.bundles || ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
-for (const name of ['dsh-better-sidebar', 'dsh-remote-desktop-companion']) if (!pkg.dsh.profile.bundles.includes(name)) pkg.dsh.profile.bundles.push(name)
+for (const name of ['dsh-better-sidebar', 'dsh-ssh-workspace-companion']) if (!pkg.dsh.profile.bundles.includes(name)) pkg.dsh.profile.bundles.push(name)
 pkg.pnpm = pkg.pnpm || {}
 pkg.pnpm.onlyBuiltDependencies = Array.from(new Set([...(pkg.pnpm.onlyBuiltDependencies || []), 'node-pty', 'protobufjs']))
 fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n')
@@ -177,7 +177,7 @@ ${ollamaSettings(ollamaBaseUrl)}SETTINGS
     grep -q 'minimumReleaseAgeExclude' pnpm-workspace.yaml 2>/dev/null || printf '\nminimumReleaseAgeExclude:\n  - dsh-better-sidebar\n' >> pnpm-workspace.yaml
     grep -q 'onlyBuiltDependencies' pnpm-workspace.yaml 2>/dev/null || printf '\nonlyBuiltDependencies:\n  - node-pty\n  - protobufjs\n' >> pnpm-workspace.yaml
     grep -q 'allowBuilds:' pnpm-workspace.yaml 2>/dev/null || printf '\nallowBuilds:\n  node-pty: true\n  protobufjs: true\n' >> pnpm-workspace.yaml
-    if [ ! -d node_modules/dsh-better-sidebar ] || [ ! -e node_modules/dsh-remote-desktop-companion ]; then
+    if [ ! -d node_modules/dsh-better-sidebar ] || [ ! -e node_modules/dsh-ssh-workspace-companion ]; then
       CI=true pnpm install --no-frozen-lockfile >/tmp/dsh-rd-canary-install.log 2>&1
     fi
 
@@ -361,11 +361,11 @@ async function patchLocalProfile(profile) {
   const packagePath = join(profile, 'package.json')
   const pkg = existsSync(packagePath) ? JSON.parse(await readFile(packagePath, 'utf8')) : { name: 'dsh-canary-profile', private: true }
   pkg.dependencies = pkg.dependencies || {}
-  pkg.dependencies['dsh-remote-desktop'] = `link:${localPlugin}`
+  pkg.dependencies['dsh-ssh-workspace'] = `link:${localPlugin}`
   pkg.dsh = pkg.dsh || {}
   pkg.dsh.profile = pkg.dsh.profile || {}
   pkg.dsh.profile.bundles = pkg.dsh.profile.bundles || ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
-  if (!pkg.dsh.profile.bundles.includes('dsh-remote-desktop')) pkg.dsh.profile.bundles.push('dsh-remote-desktop')
+  if (!pkg.dsh.profile.bundles.includes('dsh-ssh-workspace')) pkg.dsh.profile.bundles.push('dsh-ssh-workspace')
   await writeFile(packagePath, `${JSON.stringify(pkg, null, 2)}\n`)
 }
 

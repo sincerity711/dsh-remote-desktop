@@ -1,0 +1,58 @@
+name: Publish npm packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - name: Check release versions
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs'
+          const version = process.env.GITHUB_REF_NAME.slice(1)
+          for (const dir of ['local', 'companion']) {
+            const pkg = JSON.parse(readFileSync(`packages/${dir}/package.json`, 'utf8'))
+            if (pkg.version !== version) throw new Error(`${pkg.name}: ${pkg.version} does not match tag ${version}`)
+            if (!pkg.dsh?.bundle?.patch) throw new Error(`${pkg.name}: missing bundle patch`)
+          }
+          JS
+      - run: npm run check
+      - name: Inspect package contents
+        run: |
+          npm pack --workspace packages/local --dry-run
+          npm pack --workspace packages/companion --dry-run
+      - name: Publish with npm Trusted Publishing
+        run: |
+          for package in companion local; do
+            (
+              cd "packages/$package"
+              name=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).name')
+              version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')
+              if npm view "$name@$version" version --json > "$RUNNER_TEMP/npm-view.json" 2> "$RUNNER_TEMP/npm-view.err"; then
+                echo "$name@$version already published; skipping"
+              elif node -e 'const fs = require("fs"); const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.exit(result.error?.code === "E404" ? 0 : 1)' "$RUNNER_TEMP/npm-view.json"; then
+                npm publish --access public --provenance
+              else
+                cat "$RUNNER_TEMP/npm-view.err"
+                exit 1
+              fi
+            )
+          done

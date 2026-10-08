@@ -388,11 +388,11 @@ const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-p1-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
 pkg.dependencies['dsh-better-sidebar'] = '0.24.1'
-pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
+pkg.dependencies['dsh-ssh-workspace-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
 pkg.dsh.profile.bundles = pkg.dsh.profile.bundles || ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
-for (const name of ['dsh-better-sidebar', 'dsh-remote-desktop-companion']) if (!pkg.dsh.profile.bundles.includes(name)) pkg.dsh.profile.bundles.push(name)
+for (const name of ['dsh-better-sidebar', 'dsh-ssh-workspace-companion']) if (!pkg.dsh.profile.bundles.includes(name)) pkg.dsh.profile.bundles.push(name)
 pkg.pnpm = pkg.pnpm || {}
 pkg.pnpm.onlyBuiltDependencies = Array.from(new Set([...(pkg.pnpm.onlyBuiltDependencies || []), 'node-pty', 'protobufjs']))
 fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n')
@@ -452,11 +452,11 @@ async function patchProfilePackage(profile) {
   const packagePath = join(profile, 'package.json')
   const pkg = existsSync(packagePath) ? JSON.parse(await readFile(packagePath, 'utf8')) : { name: 'dsh-p1-profile', private: true }
   pkg.dependencies = pkg.dependencies || {}
-  pkg.dependencies['dsh-remote-desktop'] = `link:${resolve(repoRoot, 'packages/local')}`
+  pkg.dependencies['dsh-ssh-workspace'] = `link:${resolve(repoRoot, 'packages/local')}`
   pkg.dsh = pkg.dsh || {}
   pkg.dsh.profile = pkg.dsh.profile || {}
   pkg.dsh.profile.bundles = pkg.dsh.profile.bundles || ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
-  if (!pkg.dsh.profile.bundles.includes('dsh-remote-desktop')) pkg.dsh.profile.bundles.push('dsh-remote-desktop')
+  if (!pkg.dsh.profile.bundles.includes('dsh-ssh-workspace')) pkg.dsh.profile.bundles.push('dsh-ssh-workspace')
   await writeFile(packagePath, `${JSON.stringify(pkg, null, 2)}\n`)
 }
 

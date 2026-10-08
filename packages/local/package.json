@@ -1,6 +1,6 @@
 {
-  "name": "dsh-remote-desktop",
-  "version": "0.2.0",
+  "name": "dsh-ssh-workspace",
+  "version": "0.2.1",
   "description": "Connect remote dsh web instances through SSH and browse them from the local dsh sidebar.",
   "type": "module",
   "main": "lib/index.js",
@@ -56,14 +56,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sincerity711/dsh-remote-desktop.git",
+    "url": "git+https://github.com/sincerity711/dsh-ssh-workspace.git",
     "directory": "packages/local"
   },
   "bugs": {
-    "url": "https://github.com/sincerity711/dsh-remote-desktop/issues"
+    "url": "https://github.com/sincerity711/dsh-ssh-workspace/issues"
   },
-  "homepage": "https://github.com/sincerity711/dsh-remote-desktop#readme",
+  "homepage": "https://github.com/sincerity711/dsh-ssh-workspace#readme",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

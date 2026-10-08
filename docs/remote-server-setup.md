@@ -1,6 +1,6 @@
 # Remote server setup
 
-The local controller auto-connects SSH hosts whose remote web profile already has `dsh` and `dsh-remote-desktop-companion` installed and reachable from that machine's loopback interface. The Settings Connect action installs the companion over SSH, starts the remote web profile on the configured loopback port when needed, then connects.
+The local controller auto-connects SSH hosts whose remote web profile already has `dsh` and `dsh-ssh-workspace-companion` installed and reachable from that machine's loopback interface. The Settings Connect action installs the companion over SSH, starts the remote web profile on the configured loopback port when needed, then connects.
 
 Example remote command:
 
@@ -15,7 +15,7 @@ DSH_HOME=$HOME/.dsh-remote-desktop-test \
 Install the companion on the remote profile:
 
 ```sh
-dsh plugin --profile web add dsh-remote-desktop-companion
+dsh plugin --profile web add dsh-ssh-workspace-companion
 ```
 
 Configure the local machine with a concrete SSH alias:

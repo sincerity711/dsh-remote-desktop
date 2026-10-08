@@ -1,15 +1,15 @@
-# dsh-remote-desktop architecture
+# dsh-ssh-workspace architecture
 
-`dsh-remote-desktop` lets one local DSH web page operate sessions from other DSH web instances. It is intentionally a two-plugin system: the local plugin owns host discovery, SSH/proxy lifecycle, and the unified local/remote UI; the companion plugin runs in each remote DSH profile and validates iframe control messages from the local page.
+`dsh-ssh-workspace` lets one local DSH web page operate sessions from other DSH web instances. It is intentionally a two-plugin system: the local plugin owns host discovery, SSH/proxy lifecycle, and the unified local/remote UI; the companion plugin runs in each remote DSH profile and validates iframe control messages from the local page.
 
 ## Package roles
 
 | Package | Installed on | Main files | Role |
 | --- | --- | --- | --- |
-| `dsh-remote-desktop` | Local DSH web profile | `packages/local/lib/index.js`, `packages/local/lib/client.js` | Discovers SSH hosts, owns cancellable tunnel/proxy lifecycles, exposes authenticated management APIs and SSE state changes, projects remote Controller snapshots, and renders remote iframes. |
-| `dsh-remote-desktop-companion` | Remote DSH web profile | `packages/companion/lib/index.js`, `packages/companion/lib/client.js` | Runs only inside `?dshRemoteDesktop=1` iframe mode, hides the embedded remote sidebar, validates the parent, and bridges official Controller snapshots/actions over a dedicated MessageChannel. |
+| `dsh-ssh-workspace` | Local DSH web profile | `packages/local/lib/index.js`, `packages/local/lib/client.js` | Discovers SSH hosts, owns cancellable tunnel/proxy lifecycles, exposes authenticated management APIs and SSE state changes, projects remote Controller snapshots, and renders remote iframes. |
+| `dsh-ssh-workspace-companion` | Remote DSH web profile | `packages/companion/lib/index.js`, `packages/companion/lib/client.js` | Runs only inside `?dshRemoteDesktop=1` iframe mode, hides the embedded remote sidebar, validates the parent, and bridges official Controller snapshots/actions over a dedicated MessageChannel. |
 
-The local bundle patch disables stock `ui-workspace`, keeps the official `ui-settings-general` shell enabled, then inserts `dsh-remote-desktop`. The companion bundle only inserts `dsh-remote-desktop-companion`.
+The local bundle patch disables stock `ui-workspace`, keeps the official `ui-settings-general` shell enabled, then inserts `dsh-ssh-workspace`. The companion bundle only inserts `dsh-ssh-workspace-companion`.
 
 ## Runtime overview
 

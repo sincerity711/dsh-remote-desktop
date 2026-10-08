@@ -1,11 +1,11 @@
-# dsh-remote-desktop
+# dsh-ssh-workspace
 
 Operate remote DeepSeek Harness web sessions from one local DSH web page.
 
-`dsh-remote-desktop` is a two-plugin bundle:
+`dsh-ssh-workspace` is a two-plugin bundle:
 
-- `dsh-remote-desktop` runs in the local DSH web profile. It discovers SSH hosts, opens tunnels, proxies remote DSH APIs, and replaces the local workspace sidebar with a unified local/remote workspace browser.
-- `dsh-remote-desktop-companion` runs in each remote DSH web profile. It validates iframe control messages from the local page, opens requested remote sessions, and hides the embedded remote sidebar.
+- `dsh-ssh-workspace` runs in the local DSH web profile. It discovers SSH hosts, opens tunnels, proxies remote DSH APIs, and replaces the local workspace sidebar with a unified local/remote workspace browser.
+- `dsh-ssh-workspace-companion` runs in each remote DSH web profile. It validates iframe control messages from the local page, opens requested remote sessions, and hides the embedded remote sidebar.
 
 The result is a project-first sidebar where local workspaces and connected remote workspaces appear in one list. Remote projects show a compact host marker such as `win-wsl` or `xsn`, and remote sessions open inside an isolated iframe.
 
@@ -44,19 +44,19 @@ Plugin version 0.2.0 targets DSH **0.2.0-rc.2** (the npm `latest` release verifi
 Install the local controller into the local DSH web profile:
 
 ```sh
-dsh plugin --profile web add dsh-remote-desktop
+dsh plugin --profile web add dsh-ssh-workspace
 ```
 
 Install the companion into every remote DSH web profile that should be controlled from the local page:
 
 ```sh
-dsh plugin --profile web add dsh-remote-desktop-companion
+dsh plugin --profile web add dsh-ssh-workspace-companion
 ```
 
 Before npm publication, clone this repository and install the package directories explicitly:
 
 ```sh
-git clone https://github.com/sincerity711/dsh-remote-desktop.git
+git clone https://github.com/sincerity711/dsh-ssh-workspace.git
 
 dsh plugin --profile web add /path/to/dsh-remote-desktop/packages/local
 # On each remote host/profile:
@@ -68,7 +68,7 @@ From a DeepSeek Harness source checkout, replace `dsh` with the checkout wrapper
 ## Remote host setup
 
 1. Start DSH Web on the remote machine, bound to remote loopback.
-2. Install `dsh-remote-desktop-companion` in that remote web profile.
+2. Install `dsh-ssh-workspace-companion` in that remote web profile.
 3. Add a concrete SSH `Host` alias on the local machine.
 4. Open local DSH Web, go to Settings → Remote Desktop, and connect the host.
 
@@ -152,3 +152,7 @@ External SSH-host acceptance remains available when intentionally validating a r
 npm run acceptance:p0
 npm run acceptance:p1
 ```
+
+## npm releases
+
+See [npm publishing](docs/npm-publishing.md) for the first release, Trusted Publishing setup, and version-tag releases through GitHub Actions.

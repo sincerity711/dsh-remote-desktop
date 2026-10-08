@@ -197,11 +197,11 @@ const path = 'package.json'
 const pkg = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { name: 'remote-acceptance-profile', private: true }
 pkg.dependencies = pkg.dependencies || {}
 pkg.dependencies['dsh-better-sidebar'] = '0.24.1'
-pkg.dependencies['dsh-remote-desktop-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
+pkg.dependencies['dsh-ssh-workspace-companion'] = 'link:/tmp/dsh-remote-desktop-companion'
 pkg.dsh = pkg.dsh || {}
 pkg.dsh.profile = pkg.dsh.profile || {}
 pkg.dsh.profile.bundles = pkg.dsh.profile.bundles || ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
-for (const name of ['dsh-better-sidebar', 'dsh-remote-desktop-companion']) if (!pkg.dsh.profile.bundles.includes(name)) pkg.dsh.profile.bundles.push(name)
+for (const name of ['dsh-better-sidebar', 'dsh-ssh-workspace-companion']) if (!pkg.dsh.profile.bundles.includes(name)) pkg.dsh.profile.bundles.push(name)
 pkg.pnpm = pkg.pnpm || {}
 pkg.pnpm.onlyBuiltDependencies = Array.from(new Set([...(pkg.pnpm.onlyBuiltDependencies || []), 'node-pty', 'protobufjs']))
 fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n')
@@ -225,8 +225,8 @@ NODE
   await item('P0-BOOT-004', 'remote companion uses copied local artifact', async () => {
     const profilePackage = await ssh(`cat ${remoteHome}/profiles/web/package.json`)
     const pkg = JSON.parse(profilePackage)
-    if (pkg.dependencies?.['dsh-remote-desktop-companion'] !== 'link:/tmp/dsh-remote-desktop-companion') throw new Error('remote companion dependency does not use copied local artifact')
-    if (!pkg.dsh?.profile?.bundles?.includes('dsh-remote-desktop-companion')) throw new Error('remote companion bundle missing from remote profile')
+    if (pkg.dependencies?.['dsh-ssh-workspace-companion'] !== 'link:/tmp/dsh-remote-desktop-companion') throw new Error('remote companion dependency does not use copied local artifact')
+    if (!pkg.dsh?.profile?.bundles?.includes('dsh-ssh-workspace-companion')) throw new Error('remote companion bundle missing from remote profile')
     const health = await remoteCompanionHealth()
     if (health.name !== 'dsh-remote-desktop-companion') throw new Error(`unexpected companion health name ${health.name}`)
     return 'remote profile links /tmp/dsh-remote-desktop-companion and companion health answers'
@@ -240,8 +240,8 @@ async function setupLocal() {
     await writeFile(join(localHome, 'settings.yaml'), ollamaSettings(`${localOllamaBaseUrl}/v1`))
     const profile = join(localHome, 'profiles/web')
     await patchProfilePackage(profile, {
-      dependency: ['dsh-remote-desktop', `link:${localPlugin}`],
-      bundle: 'dsh-remote-desktop',
+      dependency: ['dsh-ssh-workspace', `link:${localPlugin}`],
+      bundle: 'dsh-ssh-workspace',
     })
     await cmd('pnpm', ['install', '--no-frozen-lockfile'], { cwd: profile, env: { CI: 'true' }, timeoutMs: 120000 })
     localPort = await freePort()
