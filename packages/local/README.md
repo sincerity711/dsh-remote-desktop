@@ -1,5 +1,77 @@
 # dsh-ssh-workspace
 
+[English](#english) · [简体中文](#简体中文)
+
+## English
+
+Use remote DeepSeek Harness (DSH) workspaces and sessions over SSH from one local DSH Web page. Local and remote workspaces share a sidebar; remote projects show a host marker, and remote sessions open in an isolated iframe.
+
+### Features
+
+- Discover concrete SSH host aliases from `~/.ssh/config`.
+- Connect through SSH tunnels without exposing the remote Web port to the public Internet.
+- Open, create, search, rename, fork and archive sessions in a unified sidebar.
+- Browse remote directories and add remote workspaces.
+- Manage connections in **Settings → Remote Desktop**.
+
+![Unified local and remote workspace sidebar](https://raw.githubusercontent.com/sincerity711/dsh-ssh-workspace/main/docs/assets/remote-desktop-unified-sidebar.svg)
+
+This illustration uses anonymized example data.
+
+### Requirements and compatibility
+
+Plugin 0.2.x targets **DSH 0.2.0-rc.2** and does not support DSH 0.1.x. Keep the local plugin and all remote companions on the same version, then restart the corresponding DSH processes after updating.
+
+The local machine needs an SSH client. Each remote machine needs an SSH server and a working DSH installation. Confirm that `ssh <host-alias>` connects and that `dsh` is available in the remote SSH environment.
+
+### Install
+
+On the local machine:
+
+```sh
+dsh plugin --profile web add dsh-ssh-workspace
+```
+
+On each remote machine:
+
+```sh
+dsh plugin --profile web add dsh-ssh-workspace-companion
+```
+
+If you use a custom `DSH_HOME`, use the same directory when installing and starting DSH. The remote profile path in local Remote Desktop settings must match the remote installation.
+
+### Connect
+
+1. Add a concrete alias to the local `~/.ssh/config`:
+
+   ```sshconfig
+   Host my-server
+     HostName server.example.com
+     User your-user
+   ```
+
+2. Prepare remote DSH and its companion. Bind the remote Web service to loopback:
+
+   ```sh
+   dsh --profile web --host 127.0.0.1 --port 30800 --trusted-host 127.0.0.1:30800
+   ```
+
+3. Restart local DSH Web, open **Settings → Remote Desktop**, select the host and connect.
+4. Open remote workspaces or sessions in the unified sidebar.
+
+The explicit Connect action attempts to install the companion over SSH and start remote DSH when needed. Automatic reconnection uses already prepared remote profiles.
+
+### Documentation and development
+
+- [Project and full instructions](https://github.com/sincerity711/dsh-ssh-workspace)
+- [Remote server setup](https://github.com/sincerity711/dsh-ssh-workspace/blob/main/docs/remote-server-setup.md)
+- [Architecture](https://github.com/sincerity711/dsh-ssh-workspace/blob/main/docs/architecture.md)
+- [Report an issue](https://github.com/sincerity711/dsh-ssh-workspace/issues)
+
+Edit `packages/local/src/client/`, then run `npm run build` and `npm run check` from the repository root. Published packages include generated `lib/` files.
+
+## 简体中文
+
 在一个本地 DeepSeek Harness（DSH）Web 页面中，通过 SSH 使用远程机器的工作区和会话。
 
 本地与远程工作区显示在同一个侧栏中，远程项目带有主机标记。点击远程会话后，会在独立 iframe 中打开对应机器的 DSH 页面。

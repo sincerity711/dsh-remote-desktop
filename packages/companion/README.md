@@ -1,5 +1,56 @@
 # dsh-ssh-workspace-companion
 
+[English](#english) · [简体中文](#简体中文)
+
+## English
+
+The remote companion for [dsh-ssh-workspace](https://www.npmjs.com/package/dsh-ssh-workspace). Install it in each remote DeepSeek Harness (DSH) Web profile so the local plugin can open and operate that machine's workspaces and sessions.
+
+### Where to install
+
+- Install `dsh-ssh-workspace` on the local machine.
+- Install this package, `dsh-ssh-workspace-companion`, on every remote machine.
+
+Use this package together with the local plugin.
+
+### Compatibility
+
+Plugin 0.2.x targets **DSH 0.2.0-rc.2** and does not support DSH 0.1.x. Keep the local plugin and all remote companions on the same version and restart DSH after updating.
+
+### Remote installation
+
+```sh
+dsh plugin --profile web add dsh-ssh-workspace-companion
+```
+
+Bind the remote Web service to loopback:
+
+```sh
+dsh --profile web --host 127.0.0.1 --port 30800 --trusted-host 127.0.0.1:30800
+```
+
+The local plugin connects through an SSH tunnel. If you use a custom `DSH_HOME`, installation, startup and the remote profile path in local Remote Desktop settings must refer to the same directory.
+
+Install the main plugin on the local machine, then connect the SSH host in **Settings → Remote Desktop**:
+
+```sh
+dsh plugin --profile web add dsh-ssh-workspace
+```
+
+### How it works
+
+The companion validates the parent origin and connection token inside the remote iframe opened by the local plugin. It forwards official DSH Controller state and actions through a dedicated MessageChannel and hides the embedded remote sidebar. Remote business data continues to use the remote DSH authenticated services.
+
+### Documentation and development
+
+- [Project and full instructions](https://github.com/sincerity711/dsh-ssh-workspace)
+- [Remote server setup](https://github.com/sincerity711/dsh-ssh-workspace/blob/main/docs/remote-server-setup.md)
+- [Report an issue](https://github.com/sincerity711/dsh-ssh-workspace/issues)
+
+Edit `packages/companion/src/client.js`, then run `npm run build` and `npm run check` from the repository root.
+
+## 简体中文
+
 [dsh-ssh-workspace](https://www.npmjs.com/package/dsh-ssh-workspace) 的远程配套插件。安装在每台远程机器的 DeepSeek Harness（DSH）Web profile 中，让本地插件可以打开和操作该机器的工作区与会话。
 
 ## 安装位置

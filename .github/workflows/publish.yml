@@ -48,7 +48,7 @@ jobs:
         run: |
           npm pack --workspace packages/local --dry-run
           npm pack --workspace packages/companion --dry-run
-      - name: Stage with npm Trusted Publishing
+      - name: Publish with npm Trusted Publishing
         run: |
           for package in companion local; do
             (
@@ -58,7 +58,7 @@ jobs:
               if npm view "$name@$version" version --json > "$RUNNER_TEMP/npm-view.json" 2> "$RUNNER_TEMP/npm-view.err"; then
                 echo "$name@$version already published; skipping"
               elif node -e 'const fs = require("fs"); const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.exit(result.error?.code === "E404" ? 0 : 1)' "$RUNNER_TEMP/npm-view.json"; then
-                npm stage publish --access public --provenance
+                npm publish --access public --provenance
               else
                 cat "$RUNNER_TEMP/npm-view.err"
                 exit 1
