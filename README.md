@@ -37,7 +37,7 @@ All screenshots below are synthetic and use anonymized host, user, workspace, an
 
 ## Compatibility
 
-Plugin version 0.2.0 targets DSH **0.2.0-rc.2** (the npm `latest` release verified on 2026-10-08). Upgrade the local controller and every remote companion together. DSH 0.1.x is no longer supported by this plugin version. Restart the local and remote DSH processes after replacing installed plugin packages.
+Plugin versions 0.2.x target DSH **0.2.0-rc.2** (the npm `latest` release verified on 2026-10-08). Upgrade the local controller and every remote companion together. DSH 0.1.x is no longer supported by this plugin version. Restart the local and remote DSH processes after replacing installed plugin packages.
 
 ## Install
 
@@ -53,14 +53,14 @@ Install the companion into every remote DSH web profile that should be controlle
 dsh plugin --profile web add dsh-ssh-workspace-companion
 ```
 
-Before npm publication, clone this repository and install the package directories explicitly:
+For local development, clone this repository and install the package directories explicitly:
 
 ```sh
 git clone https://github.com/sincerity711/dsh-ssh-workspace.git
 
-dsh plugin --profile web add /path/to/dsh-remote-desktop/packages/local
+dsh plugin --profile web add /path/to/dsh-ssh-workspace/packages/local
 # On each remote host/profile:
-dsh plugin --profile web add /path/to/dsh-remote-desktop/packages/companion
+dsh plugin --profile web add /path/to/dsh-ssh-workspace/packages/companion
 ```
 
 From a DeepSeek Harness source checkout, replace `dsh` with the checkout wrapper, for example `pnpm dsh`.

@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-workspace",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Connect remote dsh web instances through SSH and browse them from the local dsh sidebar.",
   "type": "module",
   "main": "lib/index.js",
@@ -52,7 +52,9 @@
     "ssh",
     "workspace",
     "remote-workspace",
-    "web-ui"
+    "web-ui",
+    "ssh-workspace",
+    "dsh-ssh-workspace"
   ],
   "repository": {
     "type": "git",
