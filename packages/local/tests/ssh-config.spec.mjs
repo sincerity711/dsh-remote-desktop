@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildRemoteSetupSshArgs, parseSshConfig } from '../lib/index.js'
+import { buildRemoteSetupSshArgs, normalizeSource, parseSshConfig } from '../lib/index.js'
 
 test('parseSshConfig keeps concrete host aliases and display details', () => {
   const hosts = parseSshConfig(`
@@ -49,11 +49,11 @@ test('remote setup SSH command installs companion before connecting', () => {
   const args = buildRemoteSetupSshArgs({ sshAlias: 'win-wsl', remoteDshHost: '127.0.0.1', remoteDshPort: 30800 })
   assert.deepEqual(args.slice(0, 3), ['-o', 'BatchMode=yes', 'win-wsl'])
   const command = args.at(-1)
-  assert.match(command, /dsh plugin --profile web add/)
+  assert.match(command, /"\$dsh_command" plugin --profile web add/)
   assert.match(command, /dsh-ssh-workspace-companion/)
   assert.match(command, /remote_desktop_has_companion/)
   assert.match(command, /DSH_REMOTE_DESKTOP_INSTALL=1/)
-  assert.match(command, /dsh --profile web --host/)
+  assert.match(command, /nohup "\$dsh_command" --profile web --host/)
 })
 
 
@@ -71,4 +71,11 @@ test('remote setup treats authenticated HTTP as ready and returns the launch tok
   assert.match(command, /auth_url=\$\(remote_desktop_print_auth_url\)/)
   assert.match(command, /if \[ -n "\$auth_url" \]/)
   assert.match(command, /kill -0 "\$pid"/)
+})
+
+test('custom remote profile home is explicit and shell quoted for later startup', () => {
+  const source = normalizeSource({ sshAlias: 'test', remoteDshHome: "/home/test/space ' profile" })
+  const command = buildRemoteSetupSshArgs(source, { install: false }).at(-1)
+  assert.ok(command.includes('export DSH_HOME='))
+  assert.throws(() => normalizeSource({ sshAlias: 'test', remoteDshHome: '~/.dsh' }), /absolute remote path/)
 })

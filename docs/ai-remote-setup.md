@@ -69,7 +69,7 @@ The example versions must be replaced with the observed versions. Skip installat
 
 For an existing profile, back up its package/configuration files before changing dependencies. If the old `dsh-remote-desktop-companion` bundle is present, replace it with the renamed companion; avoid loading both. Preserve all unrelated bundles and all sessions. Never clear a DSH home or npm cache as a default repair step.
 
-The current local Connect action can install an unpinned companion. Manual preparation using this procedure provides version certainty, but verify versions again after using that action. Custom remote homes must also be visible in the SSH environment used by the local plugin; exporting a home only in a one-off setup shell does not configure later connections.
+The local Connect action now reconciles exact DSH and user-plugin versions with the active local profile, maps SSH Workspace to its companion, and disables remote-only user plugins. Manual preparation remains useful for prerequisite setup and diagnosis. Supply a custom remote home as the source's absolute `remoteDshHome` in the management API, or make it visible in the SSH environment used by the local plugin; exporting a home only in a one-off setup shell does not configure later connections.
 
 ## 4. Start and verify
 
@@ -104,4 +104,4 @@ Summarize actual local/remote DSH versions, both plugin versions, remote home, p
 最后验证 health、本地连接、打开远程会话并切回本地，报告版本和验证结果。
 ```
 
-注意：DSH 版本和插件版本是两套编号，不能混用；不要默认安装 `latest`。相同 DSH 版本只是必要条件，还要检查插件声明的兼容性。当前插件 0.2.x 面向 DSH `0.2.0-rc.2`。缺少 Node/npm 时先检查系统、权限和 PATH；不要默认使用 sudo。安装后需要验证实际运行的 profile，而不只是看到 npm 安装成功。手动导出的自定义 home 不会自动传给后续 SSH 连接。
+注意：DSH 版本和插件版本是两套编号，不能混用；不要默认安装 `latest`。相同 DSH 版本只是必要条件，还要检查插件声明的兼容性。当前插件 0.2.x 面向 DSH `0.2.0-rc.2`。Connect 会按本地实际版本同步 DSH 和用户插件，并停用远端额外的用户插件；不会复制设置或凭据。缺少 Node/npm 时先检查系统、权限和 PATH；不要默认使用 sudo。安装后需要验证实际运行的 profile，而不只是看到 npm 安装成功。手动导出的自定义 home 不会自动传给后续 SSH 连接。

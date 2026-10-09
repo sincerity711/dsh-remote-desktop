@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+
 export const name = 'dsh-ssh-workspace-companion'
-export const inject = ['webServer']
+export const inject = ['webServer', 'profileContext']
 
 const HEALTH_PATH = '/remote-desktop-companion/api/health'
 
@@ -7,7 +11,11 @@ const HEALTH_PATH = '/remote-desktop-companion/api/health'
  * Transitional package-readiness probe. Session and Workspace data always use
  * the authenticated DSH Client Controller running inside the remote iframe.
  */
-export function apply(ctx) {
+export async function apply(ctx) {
+  const require = createRequire(ctx.profileContext.installAnchor)
+  const boot = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-app-boot')).href)
+  const dshVersion = boot.getDshRuntimeVersion()
+  const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
   const disposeHealth = ctx.webServer.register({
     kind: 'exact',
     path: HEALTH_PATH,
@@ -16,7 +24,7 @@ export function apply(ctx) {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',
       })
-      res.end(JSON.stringify({ ok: true, name }))
+      res.end(JSON.stringify({ ok: true, name, version, dshVersion }))
     },
   })
   ctx.effect(() => disposeHealth, 'dsh-remote-desktop-companion: readiness route')

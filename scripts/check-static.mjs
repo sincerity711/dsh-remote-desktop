@@ -156,7 +156,7 @@ if (companionClient.includes('[class*="frame"] { grid-template-columns') || comp
 for (const needle of ['REMOTE_COMPANION_SNAPSHOT_PATH', 'REMOTE_COMPANION_RPC_PATH', '/remote-desktop-companion/api/snapshot', '/remote-desktop-companion/api/rpc', '/remote-desktop/api/host-api', 'DSH_REMOTE_DESKTOP_COMPANION_TOKEN']) {
   if (localHost.includes(needle) || companionHost.includes(needle)) throw new Error(`obsolete Companion Host business API remains: ${needle}`)
 }
-for (const needle of ["inject = ['webServer', 'connection']", 'requestRejection(req)']) {
+for (const needle of ["inject = ['webServer', 'connection', 'profileContext']", 'requestRejection(req)']) {
   if (!localHost.includes(needle)) throw new Error(`authenticated local management boundary missing ${needle}`)
 }
 if (!companionHost.includes('/remote-desktop-companion/api/health')) throw new Error('transitional Companion readiness route missing')

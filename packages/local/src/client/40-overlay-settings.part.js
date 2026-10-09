@@ -143,7 +143,7 @@
         h('div', { className: 'rd-settingsHosts' }, sources.map(source => {
           const connected = source.state === 'connected'
           const busy = pendingHost === source.id
-          const stateText = connected ? 'Connected' : source.state === 'connecting' ? 'Connecting' : source.state === 'error' ? 'Connection failed' : 'Not connected'
+          const stateText = connected ? 'Connected' : source.state === 'connecting' ? (source.setupStage || 'Connecting') : source.state === 'error' ? 'Connection failed' : 'Not connected'
           const dotState = connected ? 'done' : source.state === 'connecting' ? 'ongoing' : source.state === 'error' ? 'error' : 'warning'
           const address = [source.sshUser, source.sshHost].filter(Boolean).join('@') || source.sshAlias || source.id
           return h('article', { key: source.id, className: 'rd-settingsHost', 'data-rd-settings-source-id': source.id },

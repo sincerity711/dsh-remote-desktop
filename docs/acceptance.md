@@ -37,8 +37,11 @@ Commands:
 npm run acceptance:container:up
 npm run acceptance:container:p0
 npm run acceptance:container:p1
+npm run acceptance:container:sync
 npm run acceptance:container:all
 ```
+
+`acceptance:container:sync` exercises actual SSH preparation on `remote-b` with an isolated local home `.acceptance/environment-sync/local-home` and remote home `/home/dsh/.dsh-remote-desktop-test-env-sync`, on loopback port `30802`. It installs the exact local runtime in a user-owned prefix when missing, transfers a local file plugin and the matching companion, verifies disabled activation, disables a remote-only plugin, preserves settings/session sentinels (including DSH's legacy settings import) and proves repeat setup does not install or restart. It also starts real local DSH and exercises the authenticated Settings Connect API, checking observable preparation stages, concurrent-request deduplication, forwarded companion health and disconnect. The package downloads use the existing host proxy. The remote profile is retained for inspection; reports under `.acceptance/artifacts/sync-*` omit launch tokens and package archive contents.
 
 The Apple container remotes are retained after P0/P1 so the developer can inspect them manually. Stop or remove them explicitly:
 

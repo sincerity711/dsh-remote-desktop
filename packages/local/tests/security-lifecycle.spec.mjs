@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { apply as applyLocal, closeProxy, normalizeSource, parseSshConfig, startProxyServer } from '../lib/index.js'
 import { apply as applyCompanion } from '../../companion/lib/index.js'
+import { syncFixture } from './helpers/sync-fixture.mjs'
 
 function responseRecorder() {
   return {
@@ -47,9 +48,12 @@ test('local management routes reject unauthenticated browser requests before dis
   }
 })
 
-test('companion host exposes readiness only and no Session or Workspace business API', async () => {
+test('companion host exposes readiness only and no Session or Workspace business API', async t => {
+  const fixture = await syncFixture()
+  t.after(() => fixture.close())
   const routes = new Map()
-  applyCompanion({
+  await applyCompanion({
+    profileContext: { installAnchor: fixture.anchor },
     webServer: { register(route) { routes.set(route.path, route); return () => {} } },
     effect() {},
   })

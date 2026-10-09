@@ -5,13 +5,15 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
+import { snapshotEnvironment } from './environment-sync.js'
+import { synchronizeRemote } from './remote-sync.js'
 
 export const DEFAULT_REMOTE_DSH_PORT = 30800
 export const REMOTE_COMPANION_PACKAGE = 'dsh-ssh-workspace-companion'
 export const REMOTE_COMPANION_HEALTH_PATH = '/remote-desktop-companion/api/health'
 
 export const name = 'dsh-ssh-workspace'
-export const inject = ['webServer', 'connection']
+export const inject = ['webServer', 'connection', 'profileContext']
 
 const API_PREFIX = '/remote-desktop/api'
 const DEFAULT_REMOTE_HOST = '127.0.0.1'
@@ -92,6 +94,7 @@ function publicSource(source, runtime) {
     ...source,
     state: runtime?.state ?? 'disconnected',
     error: runtime?.error ?? null,
+    setupStage: runtime?.setupStage,
     iframeUrl: runtime?.iframeUrl,
     token: runtime?.token,
   }
@@ -135,6 +138,8 @@ export function normalizeSource(input) {
   }
   const sshPort = Number(input.sshPort ?? DEFAULT_SSH_PORT)
   const remoteDshPort = Number(input.remoteDshPort ?? DEFAULT_REMOTE_DSH_PORT)
+  const remoteDshHome = input.remoteDshHome === undefined ? undefined : String(input.remoteDshHome)
+  if (remoteDshHome !== undefined && (!remoteDshHome.startsWith('/') || remoteDshHome.includes('\0'))) throw new Error('remoteDshHome must be an absolute remote path')
   if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) throw new Error('sshPort must be an integer from 1 to 65535')
   if (!Number.isInteger(remoteDshPort) || remoteDshPort < 1 || remoteDshPort > 65535) throw new Error('remoteDshPort must be an integer from 1 to 65535')
   return {
@@ -146,6 +151,7 @@ export function normalizeSource(input) {
     sshPort,
     remoteDshHost: String(input.remoteDshHost ?? DEFAULT_REMOTE_HOST).trim() || DEFAULT_REMOTE_HOST,
     remoteDshPort,
+    ...(remoteDshHome !== undefined ? { remoteDshHome } : {}),
     autoConnect: input.autoConnect !== false,
   }
 }
@@ -280,12 +286,18 @@ export function buildRemoteBrowseSshArgs(source) {
 
 function remoteSetupScript(source, options = {}) {
   return `set -e
+${source.remoteDshHome === undefined ? '' : `export DSH_HOME=${shellQuote(source.remoteDshHome)}`}
 export DSH_REMOTE_DESKTOP_HOST=${shellQuote(source.remoteDshHost)}
 export DSH_REMOTE_DESKTOP_PORT=${shellQuote(String(source.remoteDshPort))}
 export DSH_REMOTE_DESKTOP_COMPANION=${shellQuote(REMOTE_COMPANION_PACKAGE)}
 export DSH_REMOTE_DESKTOP_HEALTH=${shellQuote(REMOTE_COMPANION_HEALTH_PATH)}
 export DSH_REMOTE_DESKTOP_INSTALL=${options.install === true ? '1' : '0'}
 export DSH_REMOTE_DESKTOP_LOG="/tmp/dsh-remote-desktop-$DSH_REMOTE_DESKTOP_PORT.log"
+managed_dsh=$(node -e "const fs=require('node:fs'),path=require('node:path'),os=require('node:os');try{const record=JSON.parse(fs.readFileSync(path.join(process.env.DSH_HOME||path.join(os.homedir(),'.dsh'),'remote-desktop/managed/service-'+process.env.DSH_REMOTE_DESKTOP_PORT+'.json'),'utf8'));if(record.executable)process.stdout.write(record.executable)}catch{}")
+dsh_command=dsh
+if [ -n "$managed_dsh" ] && [ -x "$managed_dsh" ]; then
+  dsh_command="$managed_dsh"
+fi
 remote_desktop_has_dsh() {
   node -e "const url='http://' + process.env.DSH_REMOTE_DESKTOP_HOST + ':' + process.env.DSH_REMOTE_DESKTOP_PORT + '/'; fetch(url).then(()=>process.exit(0),()=>process.exit(1))"
 }
@@ -313,10 +325,11 @@ remote_desktop_stop_listener() {
   sleep 1
 }
 remote_desktop_start_dsh() {
-  nohup dsh --profile web --host "$DSH_REMOTE_DESKTOP_HOST" --port "$DSH_REMOTE_DESKTOP_PORT" --trusted-host "$DSH_REMOTE_DESKTOP_HOST:$DSH_REMOTE_DESKTOP_PORT" > "$DSH_REMOTE_DESKTOP_LOG" 2>&1 < /dev/null &
+  nohup "$dsh_command" --profile web --host "$DSH_REMOTE_DESKTOP_HOST" --port "$DSH_REMOTE_DESKTOP_PORT" --trusted-host "$DSH_REMOTE_DESKTOP_HOST:$DSH_REMOTE_DESKTOP_PORT" > "$DSH_REMOTE_DESKTOP_LOG" 2>&1 < /dev/null &
   echo $! > "/tmp/dsh-remote-desktop-$DSH_REMOTE_DESKTOP_PORT.pid"
+  node -e "const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process');const port=process.env.DSH_REMOTE_DESKTOP_PORT;const file=path.join(process.env.DSH_HOME||path.join(os.homedir(),'.dsh'),'remote-desktop/managed/service-'+port+'.json');try{const r=JSON.parse(fs.readFileSync(file,'utf8'));r.pid=Number(fs.readFileSync('/tmp/dsh-remote-desktop-'+port+'.pid','utf8'));r.command=cp.execFileSync('ps',['-p',String(r.pid),'-o','args='],{encoding:'utf8'}).trim();fs.writeFileSync(file+'.tmp',JSON.stringify(r),{mode:384});fs.renameSync(file+'.tmp',file)}catch{}"
 }
-if ! command -v dsh >/dev/null 2>&1; then
+if ! command -v "$dsh_command" >/dev/null 2>&1; then
   echo "remote dsh is not installed or is not on PATH" >&2
   exit 127
 fi
@@ -325,7 +338,7 @@ if remote_desktop_has_companion; then
   exit 0
 fi
 if [ "$DSH_REMOTE_DESKTOP_INSTALL" = "1" ]; then
-  dsh plugin --profile web add "$DSH_REMOTE_DESKTOP_COMPANION"
+  "$dsh_command" plugin --profile web add "$DSH_REMOTE_DESKTOP_COMPANION"
 elif ! remote_desktop_companion_configured; then
   echo "remote companion is not installed in the remote web profile" >&2
   exit 78
@@ -565,11 +578,27 @@ function appendCapped(current, chunk, limit = 4000) {
   return `${current}${String(chunk)}`.slice(-limit)
 }
 
-async function runSsh(source, args, phase, signal) {
-  const proc = spawn('ssh', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+async function runSsh(source, args, phase, signal, options = {}) {
+  signal?.throwIfAborted()
+  const proc = spawn('ssh', args, { stdio: [options.input ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
+  if (options.input) {
+    proc.stdin.on('error', () => {})
+    if (options.keepOpen) proc.stdin.write(`${options.input}\n`)
+    else proc.stdin.end(options.input)
+  }
   let stdout = ''
   let stderr = ''
-  proc.stdout.on('data', chunk => { stdout = appendCapped(stdout, chunk) })
+  let pending = ''
+  proc.stdout.on('data', chunk => {
+    stdout = appendCapped(stdout, chunk)
+    pending += String(chunk)
+    let end
+    while ((end = pending.indexOf('\n')) !== -1) {
+      const line = pending.slice(0, end).trim()
+      pending = pending.slice(end + 1)
+      if (line.startsWith('DSH_SETUP_STAGE:')) options.onStage?.(line.slice('DSH_SETUP_STAGE:'.length))
+    }
+  })
   proc.stderr.on('data', chunk => { stderr = appendCapped(stderr, chunk) })
   const abort = () => { proc.kill() }
   signal?.addEventListener('abort', abort, { once: true })
@@ -590,6 +619,12 @@ async function waitForSshTunnel(source, proc, port, stderrRef, signal) {
 }
 
 async function setupRemoteCompanion(source, options = { install: true }, signal) {
+  if (options.install === true) {
+    const snapshot = await snapshotEnvironment(options.profileContext, signal)
+    const script = `${source.remoteDshHome === undefined ? '' : `export DSH_HOME=${shellQuote(source.remoteDshHome)}\n`}export DSH_REMOTE_DESKTOP_HOST=${shellQuote(source.remoteDshHost)}\nexport DSH_REMOTE_DESKTOP_PORT=${shellQuote(String(source.remoteDshPort))}\nexport DSH_REMOTE_DESKTOP_FRAMED=1\ncommand -v node >/dev/null 2>&1 || { echo 'Checking environment: Node.js/npm missing or unavailable on SSH PATH' >&2; exit 127; }\nexec node --input-type=module -e ${shellQuote(`(${synchronizeRemote.toString()})()`)} `
+    const args = ['-o', 'BatchMode=yes', ...sshDestinationArgs(source), `sh -lc ${shellQuote(script)}`]
+    return await runSsh(source, args, 'remote environment synchronization', signal, { input: JSON.stringify(snapshot), keepOpen: true, onStage: options.onStage })
+  }
   return await runSsh(source, buildRemoteSetupSshArgs(source, options), options.install === true ? 'remote setup over SSH' : 'remote auto-start over SSH', signal)
 }
 
@@ -608,6 +643,7 @@ export async function apply(ctx) {
   let sources = await loadSources()
   let disposed = false
   const runtimes = new Map()
+  const connections = new Map()
   const sourceEventClients = new Set()
   const publishSourcesChanged = () => {
     for (const res of [...sourceEventClients]) {
@@ -634,27 +670,41 @@ export async function apply(ctx) {
     sources = await loadSources()
   }
 
-  async function connectSource(id, options = {}) {
+  function connectSource(id, options = {}) {
+    if (connections.has(id)) return connections.get(id)
+    const promise = doConnectSource(id, options).finally(() => {
+      if (connections.get(id) === promise) connections.delete(id)
+    })
+    connections.set(id, promise)
+    return promise
+  }
+
+  async function doConnectSource(id, options = {}) {
     if (disposed) throw new Error('remote desktop plugin is disposed')
     sources = await loadSources()
     const source = sources.find(item => item.id === id)
     if (source === undefined) throw new Error(`unknown source ${id}`)
     const existing = runtimes.get(id)
-    if (existing?.state === 'connected') return existing
-    if (existing?.state === 'connecting') {
+    if (existing?.state === 'connected' && !options.setup) return existing
+    if (existing?.state === 'connecting' || existing?.state === 'connected') {
       disconnectSource(id)
     }
 
     const runtime = {
-      state: 'connecting', error: null, token: randomUUID(),
+      state: 'connecting', setupStage: 'Checking environment', error: null, token: randomUUID(),
       abort: new AbortController(), reconnectAttempt: options.reconnectAttempt ?? 0,
     }
     runtimes.set(id, runtime)
     publishSourcesChanged()
     try {
       let setupOutput = ''
-      if (options.setup === true) setupOutput = await setupRemoteCompanion(source, { install: true }, runtime.abort.signal)
+      if (options.setup === true) setupOutput = await setupRemoteCompanion(source, {
+        install: true, profileContext: ctx.profileContext,
+        onStage: stage => { if (runtimes.get(id) === runtime) { runtime.setupStage = stage; publishSourcesChanged() } },
+      }, runtime.abort.signal)
       else if (options.startPrepared === true) setupOutput = await setupRemoteCompanion(source, { install: false }, runtime.abort.signal)
+      runtime.setupStage = 'Connecting'
+      publishSourcesChanged()
       runtime.authToken = authTokenFromSetupOutput(setupOutput)
       if (runtimes.get(id) !== runtime) throw new Error('connection superseded')
       const tunnelPort = await freePort()
@@ -692,6 +742,7 @@ export async function apply(ctx) {
       runtime.proxy = proxy
       runtime.iframeUrl = `http://127.0.0.1:${proxy.port}/?dshRemoteDesktop=1#token=${encodeURIComponent(runtime.token)}`
       runtime.state = 'connected'
+      runtime.setupStage = undefined
       runtime.error = null
       runtime.reconnectAttempt = 0
       publishSourcesChanged()
@@ -702,7 +753,7 @@ export async function apply(ctx) {
       runtime.ssh?.kill()
       closeProxy(runtime.proxy)
       publishSourcesChanged()
-      if (runtimes.get(id) === runtime) scheduleReconnect(id, runtime)
+      if (runtimes.get(id) === runtime && options.setup !== true) scheduleReconnect(id, runtime)
       throw error
     }
   }
