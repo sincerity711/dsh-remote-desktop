@@ -19,3 +19,5 @@ This file intentionally records the small maintained delta instead of carrying a
 
 - Update navigation to the recorded 0.2.0-rc.2 compatibility baseline, use mainView retention, and acquire temporary references for rename operations.
 - Keep the original browser viewing state and adapt current Regular icons and useSessionStatus hooks.
+
+- Backport the upstream macOS workspace fade fix: hide the bottom fill-gradient overlay under `[data-platform='darwin']`, where the sidebar uses translucent window vibrancy. Keep the normal web sidebar fade.
